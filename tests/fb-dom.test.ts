@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, detectPageProblem, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, describeDialogState, detectPageProblem, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -35,6 +35,26 @@ describe('fb-dom', () => {
       '<div role="dialog"><div role="button" aria-label="Đóng">Đóng</div></div>' +
       '<div role="dialog"><div role="button" aria-label="Đăng">Đăng</div></div>';
     expect(findPostButton(document)?.getAttribute('aria-label')).toBe('Đăng');
+  });
+  it('describes the dialog state without leaking post text', () => {
+    document.body.innerHTML = '';
+    expect(describeDialogState(document)).toBe('không còn hộp thoại');
+    document.body.innerHTML =
+      '<div role="dialog" aria-label="Nội quy nhóm"><div role="textbox" contenteditable="true">bí mật của tôi</div>' +
+      '<div role="button" aria-label="Đăng" aria-disabled="true">Đăng</div></div>';
+    const state = describeDialogState(document);
+    expect(state).toContain('1 hộp thoại');
+    expect(state).toContain('nút Đăng đang khóa');
+    expect(state).toContain('Nội quy nhóm');
+    expect(state).not.toContain('bí mật');
+  });
+  it('treats a closed dialog or an emptied textbox as submitted', () => {
+    document.body.innerHTML = '';
+    expect(isComposerSubmitted(document)).toBe(true);
+    document.body.innerHTML = '<div role="dialog"><div role="textbox" contenteditable="true">xin chào</div></div>';
+    expect(isComposerSubmitted(document)).toBe(false);
+    document.body.innerHTML = '<div role="dialog"><div role="textbox" contenteditable="true"> </div></div>';
+    expect(isComposerSubmitted(document)).toBe(true);
   });
   it('detects join button', () => {
     document.body.innerHTML = '<div role="button">Join group</div>';

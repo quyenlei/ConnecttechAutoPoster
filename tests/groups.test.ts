@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGroupList, parseGroupSlug, withReadName } from '../src/lib/groups';
+import { addToSelection, filterGroups, parseGroupList, parseGroupSlug, removeFromSelection, withReadName } from '../src/lib/groups';
 
 describe('parseGroupSlug', () => {
   it('accepts group urls', () => {
@@ -46,5 +46,26 @@ describe('read group names', () => {
   });
   it('keeps a name the user typed', () => {
     expect(withReadName(list, 'abc', 'Hội B')[1]?.name).toBe('My own name');
+  });
+});
+
+describe('group selection', () => {
+  const gs = [
+    { id: '1', name: 'Hội Đà Nẵng', url: 'u1' },
+    { id: '2', name: 'Hội Hà Nội', url: 'u2' },
+    { id: '3', name: 'Sale đồ cũ', url: 'u3' },
+  ];
+  it('filters by name, ignoring case and Unicode form', () => {
+    expect(filterGroups(gs, 'hội')).toHaveLength(2);
+    expect(filterGroups(gs, 'Đà Nẵng'.normalize('NFD'))).toHaveLength(1);
+    expect(filterGroups(gs, '  ')).toHaveLength(3);
+    expect(filterGroups(gs, 'zzz')).toHaveLength(0);
+  });
+  it('adds without duplicates and respects the cap', () => {
+    expect(addToSelection(['1'], ['1', '2', '3'], 10)).toEqual(['1', '2', '3']);
+    expect(addToSelection(['1'], ['2', '3'], 2)).toEqual(['1', '2']);
+  });
+  it('removes only the given ids', () => {
+    expect(removeFromSelection(['1', '2', '3'], ['2'])).toEqual(['1', '3']);
   });
 });

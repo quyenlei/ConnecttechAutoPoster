@@ -5,7 +5,9 @@ import {
   findComposerTrigger,
   findDialogTextbox,
   findJoinButton,
+  describeDialogState,
   findPostButton,
+  isComposerSubmitted,
   isEnabled,
   readGroupName,
   waitFor,
@@ -77,9 +79,9 @@ async function submitPost(text: string): Promise<PostOutcome> {
   }
   button.click();
 
-  // Success = the dialog closes. A blocked/limited warning may appear instead.
-  const closed = await waitFor(() => !document.querySelector('[role="dialog"] [role="textbox"]'), 20_000, 500);
+  // Success = the dialog closes or its textbox is emptied. A blocked/limited warning may appear instead.
+  const closed = await waitFor(() => isComposerSubmitted(document), 30_000, 500);
   const late = detectPageProblem(document, location.pathname);
   if (late?.kind === 'fatal') return { kind: 'fatal', reason: late.reason };
-  return closed ? { kind: 'posted' } : { kind: 'failed', reason: 'Facebook không xác nhận bài đăng.' };
+  return closed ? { kind: 'posted' } : { kind: 'failed', reason: `Facebook không xác nhận bài đăng (${describeDialogState(document)}).` };
 }

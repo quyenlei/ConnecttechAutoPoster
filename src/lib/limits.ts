@@ -11,7 +11,7 @@ export const LIMITS = {
   /** Wait for a group page to finish loading. */
   tabLoadTimeoutMs: 45_000,
   /** Wait for the composer flow inside the page. */
-  postTimeoutMs: 40_000,
+  postTimeoutMs: 90_000,
   /** Daily schedule: at most this many start times per campaign. */
   maxScheduleTimesPerDay: 2,
   /** Daily schedule: minimum gap between two start times, also across midnight. */

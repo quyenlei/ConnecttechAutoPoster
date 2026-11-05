@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { delayWarning, formatDuration, recommendDelay } from '@/lib/delay';
+import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { newId } from '@/lib/id';
 import { DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
 import { isActive } from '@/lib/run-engine';
@@ -34,12 +35,14 @@ export function CampaignsView() {
   const groups = useItem(groupsItem) ?? [];
   const run = useItem(runItem);
   const [draft, setDraft] = useState<Campaign | null>(null);
+  const [groupQuery, setGroupQuery] = useState('');
   const [message, setMessage] = useState<{ text: string; danger: boolean } | null>(null);
 
   useEffect(() => {
     if (!draft && campaigns[0]) setDraft(campaigns[0]);
   }, [campaigns, draft]);
 
+  const visibleGroups = useMemo(() => filterGroups(groups, groupQuery), [groups, groupQuery]);
   const saved = draft ? campaigns.some((c) => c.id === draft.id) : false;
   const busy = run ? isActive(run) : false;
   const warning = draft ? delayWarning(draft.delay, draft.groupIds.length) : null;
@@ -163,20 +166,32 @@ export function CampaignsView() {
               {groups.length === 0 ? (
                 <p className="u-muted">Hãy thêm nhóm ở tab Nhóm trước.</p>
               ) : (
-                <div className="campaigns__groups" role="group" aria-label="Chọn nhóm">
-                  {groups.map((g) => (
-                    <label className="campaigns__group" key={g.id}>
-                      <input
-                        type="checkbox"
-                        checked={draft.groupIds.includes(g.id)}
-                        onChange={(e) =>
-                          patch({ groupIds: e.target.checked ? [...draft.groupIds, g.id].slice(0, LIMITS.maxGroupsPerCampaign) : draft.groupIds.filter((x) => x !== g.id) })
-                        }
-                      />
-                      {g.name}
-                    </label>
-                  ))}
-                </div>
+                <>
+                  <div className="campaigns__groups-tools">
+                    <label className="u-sr-only" htmlFor="c-group-search">Tìm nhóm theo tên</label>
+                    <input id="c-group-search" className="field__control" type="search" placeholder="Tìm nhóm theo tên" value={groupQuery} onChange={(e) => setGroupQuery(e.target.value)} />
+                    <button className="button button--small" type="button" disabled={visibleGroups.length === 0} onClick={() => patch({ groupIds: addToSelection(draft.groupIds, visibleGroups.map((g) => g.id), LIMITS.maxGroupsPerCampaign) })}>
+                      Chọn tất cả{groupQuery.trim() ? ' (đang lọc)' : ''}
+                    </button>
+                    <button className="button button--small" type="button" disabled={draft.groupIds.length === 0} onClick={() => patch({ groupIds: removeFromSelection(draft.groupIds, groupQuery.trim() ? visibleGroups.map((g) => g.id) : draft.groupIds) })}>
+                      Bỏ chọn{groupQuery.trim() ? ' (đang lọc)' : ' tất cả'}
+                    </button>
+                  </div>
+                  <div className="campaigns__groups" role="group" aria-label="Chọn nhóm">
+                    {visibleGroups.length === 0 && <p className="u-muted">Không có nhóm nào khớp.</p>}
+                    {visibleGroups.map((g) => (
+                      <label className="campaigns__group" key={g.id}>
+                        <input
+                          type="checkbox"
+                          checked={draft.groupIds.includes(g.id)}
+                          onChange={(e) => patch({ groupIds: e.target.checked ? addToSelection(draft.groupIds, [g.id], LIMITS.maxGroupsPerCampaign) : removeFromSelection(draft.groupIds, [g.id]) })}
+                        />
+                        {g.name}
+                      </label>
+                    ))}
+                  </div>
+                  {draft.groupIds.length >= LIMITS.maxGroupsPerCampaign && <p className="field__hint">Đã đạt tối đa {LIMITS.maxGroupsPerCampaign} nhóm cho một chiến dịch.</p>}
+                </>
               )}
             </div>
 

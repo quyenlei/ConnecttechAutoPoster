@@ -55,3 +55,22 @@ export const hasPlaceholderName = (g: Group): boolean => g.name === g.id;
 export function withReadName(groups: Group[], id: string, name: string): Group[] {
   return groups.map((g) => (g.id === id && hasPlaceholderName(g) ? { ...g, name } : g));
 }
+
+const fold = (s: string): string => s.normalize('NFC').toLowerCase();
+
+/** Groups whose name or id contains the query (case-insensitive). Empty query returns all. */
+export function filterGroups(groups: Group[], query: string): Group[] {
+  const q = fold(query.trim());
+  return q ? groups.filter((g) => fold(g.name).includes(q) || fold(g.id).includes(q)) : groups;
+}
+
+/** Adds ids to the selection without duplicates, keeping order, capped at `max`. */
+export function addToSelection(selected: string[], ids: string[], max: number): string[] {
+  return [...new Set([...selected, ...ids])].slice(0, max);
+}
+
+/** Removes ids from the selection. */
+export function removeFromSelection(selected: string[], ids: string[]): string[] {
+  const drop = new Set(ids);
+  return selected.filter((id) => !drop.has(id));
+}

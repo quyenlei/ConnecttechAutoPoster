@@ -40,7 +40,7 @@ If you add a link without a name, the list shows the group id. Press **Lấy tê
 Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 1. **Name** it.
 2. **Post text**: write version 1. **Add another version** to rotate texts so consecutive groups differ (version n is used for the n-th group, then repeats).
-3. **Groups**: tick the groups (max 100).
+3. **Groups**: tick the groups (max 100). Type in the search box to filter by name. **Chọn tất cả** (Select all) and **Bỏ chọn** (Clear) act on the groups currently shown, so you can search first and select only those.
 4. **Timing and safety**:
    - Wait range in seconds. Minimum 30. Press **Use recommended** for a suggestion based on group count.
    - A random range is safer than a fixed time. A warning appears for risky values.

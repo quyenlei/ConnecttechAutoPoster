@@ -80,6 +80,31 @@ export function findPostButton(doc: Document): HTMLElement | null {
   return null;
 }
 
+/**
+ * Short, text-free summary of what is still on screen after Post was clicked.
+ * Only Facebook's own UI labels (dialog heading/aria-label) are included, never the post text.
+ */
+export function describeDialogState(doc: Document): string {
+  const dialogs = [...doc.querySelectorAll('[role="dialog"]')];
+  if (dialogs.length === 0) return 'không còn hộp thoại';
+  const button = findPostButton(doc);
+  const buttonState = !button ? 'không thấy nút Đăng' : isEnabled(button) ? 'nút Đăng đang bật' : 'nút Đăng đang khóa';
+  const labels = dialogs
+    .map((d) => (d.getAttribute('aria-label') || d.querySelector('[role="heading"], h1, h2')?.textContent || '').trim())
+    .filter((l) => l.length > 0 && l.length <= 60);
+  const heading = labels.length ? `; tiêu đề: ${[...new Set(labels)].slice(0, 2).join(' | ')}` : '';
+  return `${dialogs.length} hộp thoại, ${buttonState}${heading}`;
+}
+
+/**
+ * The post counts as submitted once the dialog textbox is gone or has been emptied.
+ * Some groups keep the dialog open for a while after Post, so an empty box is enough.
+ */
+export function isComposerSubmitted(doc: Document): boolean {
+  const textbox = findDialogTextbox(doc);
+  return !textbox || !(textbox.textContent ?? '').trim();
+}
+
 export const isEnabled = (el: HTMLElement): boolean => el.getAttribute('aria-disabled') !== 'true';
 
 export function waitFor<T>(probe: () => T | null | undefined | false, timeoutMs: number, intervalMs = 250): Promise<T | null> {
