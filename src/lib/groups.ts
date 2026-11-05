@@ -47,3 +47,11 @@ export function parseGroupList(text: string, existing: Group[] = []): ParsedGrou
   }
   return { groups, rejected };
 }
+
+/** True while the name is only the slug, i.e. the user never typed one. */
+export const hasPlaceholderName = (g: Group): boolean => g.name === g.id;
+
+/** Sets a name read from Facebook, but never overwrites a name the user chose. */
+export function withReadName(groups: Group[], id: string, name: string): Group[] {
+  return groups.map((g) => (g.id === id && hasPlaceholderName(g) ? { ...g, name } : g));
+}

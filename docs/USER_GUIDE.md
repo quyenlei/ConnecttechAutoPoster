@@ -34,6 +34,8 @@ https://www.facebook.com/groups/123456789
 
 Only `https://facebook.com/groups/...` links are accepted (also `www.`, `m.`, `web.`). Duplicates are ignored. Lines that are not group links are listed back to you.
 
+If you add a link without a name, the list shows the group id. Press **Lấy tên nhóm** to read the real names: CAP opens each unnamed group once in a background tab and reads its title. It never changes names you typed. Names are also filled in automatically the first time CAP posts to a group. Not verified on live Facebook, where the page title may differ; you can always type the name yourself with `URL | Name`.
+
 ## 2. Create a campaign
 Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 1. **Name** it.

@@ -59,6 +59,10 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 4. A Stop/Pause pressed during a step wins: the outcome is logged but the state is not advanced.
 5. On service-worker start, `restoreSchedule` recreates the alarm from `RunState.nextAt`.
 
+## Group names
+
+`fb-dom.readGroupName` reads the page title (fallback: first `h1`). The content script answers `cap/group-name`. The background uses it in two places: before a post (only if the name is still the id) and in `fetchGroupNames` (button, one tab at a time). `withReadName` never overwrites a user-typed name.
+
 ## Daily schedule
 
 - Pure logic lives in `lib/schedule.ts` (normalise, validate, `nextOccurrence`, `dueOccurrences`, `isMissed`). Local time is recomputed on each call, so DST and time-zone changes are handled.

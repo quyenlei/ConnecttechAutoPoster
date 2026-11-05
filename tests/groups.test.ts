@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGroupList, parseGroupSlug } from '../src/lib/groups';
+import { parseGroupList, parseGroupSlug, withReadName } from '../src/lib/groups';
 
 describe('parseGroupSlug', () => {
   it('accepts group urls', () => {
@@ -33,5 +33,18 @@ describe('parseGroupList', () => {
   it('skips groups that already exist', () => {
     const existing = [{ id: 'aaa', name: 'A', url: '' }];
     expect(parseGroupList('https://www.facebook.com/groups/aaa', existing).groups).toEqual([]);
+  });
+});
+
+describe('read group names', () => {
+  const list = [
+    { id: '123', name: '123', url: 'u1' },
+    { id: 'abc', name: 'My own name', url: 'u2' },
+  ];
+  it('fills a placeholder name', () => {
+    expect(withReadName(list, '123', 'Hội A')[0]?.name).toBe('Hội A');
+  });
+  it('keeps a name the user typed', () => {
+    expect(withReadName(list, 'abc', 'Hội B')[1]?.name).toBe('My own name');
   });
 });

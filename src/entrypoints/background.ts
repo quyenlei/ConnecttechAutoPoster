@@ -1,11 +1,12 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { LIMITS } from '@/lib/limits';
-import { isRunCommand, type CommandReply, type PostReply, type PostRequest, type RunCommand } from '@/lib/messages';
+import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand } from '@/lib/messages';
 import { applyOutcome, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
 import { appendLog, campaignsItem, groupsItem, runItem, scheduleCheckItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
+import { hasPlaceholderName, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
@@ -135,6 +136,12 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       await schedule(null);
       return { ok: true };
     }
+    case 'cap/run/fetch-names': {
+      if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
+      if (fetchingNames) return { ok: false, error: 'Đang lấy tên nhóm.' };
+      void fetchGroupNames(); // runs in the background; the UI watches storage
+      return { ok: true };
+    }
     case 'cap/run/reset': {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);
@@ -177,15 +184,18 @@ async function runStep(): Promise<void> {
       ? await postToGroup(group, text)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
+    // The name may have just been read from the page, so log with the stored group.
+    const logGroup = (await groupsItem.getValue()).find((g) => g.id === groupId) ?? group ?? null;
+
     // The user may have pressed Stop/Pause while we were posting; honour that.
     const latest = await runItem.getValue();
     if (latest.status !== 'running') {
-      await log(campaign.id, group ?? null, toStatus(outcome), describe(outcome));
+      await log(campaign.id, logGroup, toStatus(outcome), describe(outcome));
       return;
     }
 
     const { state, breakMinutes } = applyOutcome(latest, campaign, outcome, Date.now());
-    await log(campaign.id, group ?? null, toStatus(outcome), describe(outcome));
+    await log(campaign.id, logGroup, toStatus(outcome), describe(outcome));
     if (breakMinutes !== null) await log(campaign.id, null, 'break', `Nghỉ an toàn: ${breakMinutes} phút.`);
     if (state.status === 'done') await log(campaign.id, null, 'info', 'Đã chạy xong.');
     if (state.status === 'halted' || state.status === 'paused') await log(campaign.id, null, 'info', state.reason ?? '');
@@ -197,6 +207,51 @@ async function runStep(): Promise<void> {
   }
 }
 
+async function saveGroupName(id: string, name: string): Promise<void> {
+  await groupsItem.setValue(withReadName(await groupsItem.getValue(), id, name));
+}
+
+/** Asks the open group tab for its name. Never throws. */
+async function askGroupName(tabId: number): Promise<GroupNameReply> {
+  try {
+    const request: GroupNameRequest = { type: 'cap/group-name' };
+    return (await sendWithRetry(tabId, request)) as GroupNameReply;
+  } catch {
+    return { name: null };
+  }
+}
+
+let fetchingNames = false;
+const NAME_FETCH_GAP_MS = 3000;
+
+/** Opt-in, read-only: visits each unnamed group once, one at a time, and stores its name. */
+async function fetchGroupNames(): Promise<void> {
+  fetchingNames = true;
+  try {
+    const pending = (await groupsItem.getValue()).filter(hasPlaceholderName);
+    for (const group of pending) {
+      if (isActive(await runItem.getValue())) return; // a run started meanwhile
+      let tabId: number | undefined;
+      try {
+        const tab = await browser.tabs.create({ url: group.url, active: false });
+        tabId = tab.id;
+        if (tabId === undefined) continue;
+        await waitForTab(tabId);
+        const reply = await askGroupName(tabId);
+        if (reply.fatal) return; // checkpoint or block: stop touching Facebook
+        if (reply.name) await saveGroupName(group.id, reply.name);
+      } catch {
+        // a group that fails to load keeps its placeholder name
+      } finally {
+        if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
+      }
+      await new Promise((r) => setTimeout(r, NAME_FETCH_GAP_MS));
+    }
+  } finally {
+    fetchingNames = false;
+  }
+}
+
 async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
   let tabId: number | undefined;
   try {
@@ -204,6 +259,10 @@ async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
     tabId = tab.id;
     if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.' };
     await waitForTab(tabId);
+    if (hasPlaceholderName(group)) {
+      const found = await askGroupName(tabId);
+      if (found.name) await saveGroupName(group.id, found.name);
+    }
     const request: PostRequest = { type: 'cap/post', text };
     const reply = (await withTimeout(
       sendWithRetry(tabId, request),
@@ -235,7 +294,7 @@ function waitForTab(tabId: number): Promise<void> {
 }
 
 /** The content script may not be ready the instant the tab reports complete. */
-async function sendWithRetry(tabId: number, msg: PostRequest): Promise<unknown> {
+async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest): Promise<unknown> {
   let lastError: unknown;
   for (let i = 0; i < 8; i++) {
     try {

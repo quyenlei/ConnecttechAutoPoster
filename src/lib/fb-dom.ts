@@ -94,3 +94,23 @@ export function waitFor<T>(probe: () => T | null | undefined | false, timeoutMs:
     tick();
   });
 }
+
+const GENERIC_TITLES = new Set(['facebook', 'log in to facebook', 'đăng nhập facebook', 'đăng nhập hoặc đăng ký facebook']);
+
+/** Strips the unread counter and the "| Facebook" suffix; null when nothing useful is left. */
+export function cleanGroupTitle(title: string): string | null {
+  const name = title
+    .normalize('NFC')
+    .replace(/^\(\d+\+?\)\s*/, '')
+    .replace(/\s*[|\-–—]\s*facebook\s*$/i, '')
+    .trim();
+  return name && !GENERIC_TITLES.has(name.toLowerCase()) ? name : null;
+}
+
+/** Group name shown on the page the user's own browser already loaded. Read-only. */
+export function readGroupName(doc: Document): string | null {
+  const fromTitle = cleanGroupTitle(doc.title);
+  if (fromTitle) return fromTitle;
+  const heading = doc.querySelector('h1')?.textContent?.trim();
+  return heading ? heading.normalize('NFC') : null;
+}

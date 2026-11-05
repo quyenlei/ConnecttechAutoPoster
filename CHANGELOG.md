@@ -10,6 +10,8 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - All schedules switch off automatically when a run is halted by a checkpoint or block.
 - New limits in `lib/limits.ts`: `maxScheduleTimesPerDay`, `minScheduleGapMinutes`, `scheduleGraceMinutes`.
 
+- **Lấy tên nhóm** button on the groups tab and automatic name reading while posting, so groups show their real name instead of the id. Names you typed are never overwritten. Only verified on the local mock.
+
 ### Changed
 - "Maximum groups per campaign" validation message is now in Vietnamese.
 - Start logic is shared between the Start button and the schedule (`startRun`).

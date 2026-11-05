@@ -5,7 +5,7 @@ Usage: python3 e2e/smoke.py <ext_dir> <chromium_exe> <profile_dir>"""
 import hashlib, http.server, os, ssl, subprocess, sys, tempfile, threading, time, urllib.parse
 from playwright.sync_api import sync_playwright
 
-MOCK = """<!doctype html><html><body><h1>Mock group</h1>
+MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
 <div role="button" id="open">Write something...</div>
 <script>
 document.getElementById('open').onclick=()=>{
@@ -48,6 +48,13 @@ with sync_playwright() as p:
     pg.fill("#group-list", "https://www.facebook.com/groups/mock1 | Mock One\nhttps://www.facebook.com/groups/mock2 | Mock Two\nhttps://evil.example/groups/x")
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("text=Nhóm của bạn (2)")
     assert pg.locator("text=không phải liên kết nhóm Facebook").count() == 1, "reject notice missing"
+
+    # A group added without a name gets its name read from the page; typed names are kept.
+    pg.fill("#group-list", "https://www.facebook.com/groups/mock3")
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("text=Nhóm của bạn (3)")
+    pg.click("button:has-text('Lấy tên nhóm')")
+    pg.wait_for_selector("td:text-is('Mock Group Name')", timeout=60000)
+    assert pg.locator("td:text-is('Mock One')").count() == 1, "typed name must not be overwritten"
 
     pg.click("button:has-text('Chiến dịch')")
     pg.click("button:has-text('Tạo mới')")

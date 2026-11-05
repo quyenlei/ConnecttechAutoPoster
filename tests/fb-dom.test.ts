@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { detectPageProblem, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, isEnabled, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, detectPageProblem, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -61,5 +61,26 @@ describe('fb-dom', () => {
   it('waitFor resolves or times out', async () => {
     expect(await waitFor(() => 'x', 100)).toBe('x');
     expect(await waitFor(() => null, 60, 20)).toBeNull();
+  });
+});
+
+describe('group name', () => {
+  it('cleans the page title', () => {
+    expect(cleanGroupTitle('(3) Hội Du Học Nhật | Facebook')).toBe('Hội Du Học Nhật');
+    expect(cleanGroupTitle('Hội Du Học Nhật - Facebook')).toBe('Hội Du Học Nhật');
+    expect(cleanGroupTitle('(20+) Study Abroad – Facebook')).toBe('Study Abroad');
+    expect(cleanGroupTitle('Plain name')).toBe('Plain name');
+  });
+  it('rejects generic titles', () => {
+    for (const t of ['Facebook', '', '   ', 'Log in to Facebook', 'Đăng nhập Facebook', '(1) Facebook']) expect(cleanGroupTitle(t)).toBeNull();
+  });
+  it('reads the name from the title, then from the first heading', () => {
+    document.title = '(2) Nhóm A | Facebook';
+    expect(readGroupName(document)).toBe('Nhóm A');
+    document.title = 'Facebook';
+    document.body.innerHTML = '<h1>  Nhóm B </h1>';
+    expect(readGroupName(document)).toBe('Nhóm B');
+    document.body.innerHTML = '';
+    expect(readGroupName(document)).toBeNull();
   });
 });

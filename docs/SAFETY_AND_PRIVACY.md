@@ -16,6 +16,8 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | Max 100 groups, 10 versions, 5000 characters | `lib/limits.ts`, background validation |
 | Resume always waits a fresh delay | `run-engine.resume` |
 | One run at a time | background |
+| Group names: the **Lấy tên nhóm** button is opt-in and read-only (opens each unnamed group once in a background tab, one at a time, 3 s apart, never during a run, stops on a checkpoint). Names you typed are never overwritten. | background, `lib/fb-dom.ts` `readGroupName` |
+| During a run, a group with no name also has its name read from the tab already opened for posting. No extra page load. | background |
 | Daily schedule is opt-in (off by default), max 2 start times per campaign per day, at least 6 hours apart (also across midnight) | `lib/schedule.ts`, `lib/limits.ts`, campaign editor |
 | A scheduled start is skipped, not queued, when a run is active; a slot missed by more than 10 minutes is never run late | background |
 | All schedules switch off automatically when a run is halted (checkpoint / blocked); you must re-enable them | background |

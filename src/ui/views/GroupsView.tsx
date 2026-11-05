@@ -1,12 +1,23 @@
 import { useState } from 'react';
-import { parseGroupList } from '@/lib/groups';
+import { hasPlaceholderName, parseGroupList } from '@/lib/groups';
 import { campaignsItem, groupsItem } from '@/lib/storage';
-import { useItem } from '../hooks';
+import { sendCommand, useItem } from '../hooks';
 
 export function GroupsView() {
   const groups = useItem(groupsItem) ?? [];
   const [text, setText] = useState('');
   const [rejected, setRejected] = useState<string[]>([]);
+  const [nameMessage, setNameMessage] = useState<{ text: string; danger: boolean } | null>(null);
+  const unnamed = groups.filter(hasPlaceholderName).length;
+
+  async function fetchNames() {
+    const reply = await sendCommand({ type: 'cap/run/fetch-names' });
+    setNameMessage(
+      reply.ok
+        ? { text: 'Đang mở từng nhóm trong tab nền để đọc tên. Tên sẽ tự hiện trong danh sách.', danger: false }
+        : { text: reply.error ?? 'Không thể lấy tên nhóm.', danger: true },
+    );
+  }
 
   async function add() {
     const parsed = parseGroupList(text, groups);
@@ -57,7 +68,13 @@ export function GroupsView() {
       <section className="card">
         <div className="card__head">
           <h2>Nhóm của bạn ({groups.length})</h2>
+          {unnamed > 0 && (
+            <button className="button button--small" type="button" onClick={fetchNames}>
+              Lấy tên nhóm ({unnamed})
+            </button>
+          )}
         </div>
+        {nameMessage && <p className={nameMessage.danger ? 'notice notice--danger' : 'u-muted'} role="status">{nameMessage.text}</p>}
         {groups.length === 0 ? (
           <p className="u-muted">Chưa có nhóm nào.</p>
         ) : (

@@ -7,16 +7,21 @@ import {
   findJoinButton,
   findPostButton,
   isEnabled,
+  readGroupName,
   waitFor,
 } from '@/lib/fb-dom';
-import { isPostRequest } from '@/lib/messages';
+import { isGroupNameRequest, isPostRequest, type GroupNameReply } from '@/lib/messages';
 import type { PostOutcome } from '@/lib/types';
 
 export default defineContentScript({
   matches: ['*://*.facebook.com/groups/*'],
   runAt: 'document_idle',
   main() {
-    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome) => void) => {
+    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome | GroupNameReply) => void) => {
+      if (isGroupNameRequest(message)) {
+        readName().then(sendResponse, () => sendResponse({ name: null }));
+        return true;
+      }
       if (!isPostRequest(message)) return false;
       submitPost(message.text).then(sendResponse, (e: unknown) =>
         sendResponse({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }),
@@ -25,6 +30,13 @@ export default defineContentScript({
     });
   },
 });
+
+/** Read-only: no clicks, no typing. Reports a checkpoint so the caller can stop. */
+async function readName(): Promise<GroupNameReply> {
+  const problem = detectPageProblem(document, location.pathname);
+  if (problem?.kind === 'fatal') return { name: null, fatal: problem.reason };
+  return { name: await waitFor(() => readGroupName(document), 8_000) };
+}
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
