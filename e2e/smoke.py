@@ -66,5 +66,31 @@ with sync_playwright() as p:
     print("posted texts:", posted, "| page errors:", errors)
     assert posted == ["Hello A", "Hello B"], posted
     assert not errors
+
+    # Daily schedule: a second campaign scheduled for the next minute must start by itself.
+    from datetime import datetime, timedelta
+    when = datetime.now() + timedelta(minutes=1 if datetime.now().second < 40 else 2)
+    pg.click("button:has-text('Chiến dịch')")
+    pg.click("button:has-text('Tạo mới')")
+    pg.fill("#c-name", "Smoke lịch"); pg.fill("#c-var-0", "Hello Schedule")
+    pg.check("label:has-text('Mock One') input")
+    pg.fill("#c-min", "30"); pg.fill("#c-max", "30")
+    pg.check("text=Tự động chạy chiến dịch này mỗi ngày")
+    pg.click("button:has-text('Thêm giờ')"); pg.fill("#c-time-0", when.strftime("%H:%M"))
+    pg.wait_for_selector("text=Lần chạy tiếp theo")
+    pg.click("button:has-text('Lưu chiến dịch')"); pg.wait_for_selector("text=Đã lưu.")
+    # Two times closer than 6 hours must be refused and not saved.
+    pg.click("button:has-text('Thêm giờ')"); pg.fill("#c-time-1", (when + timedelta(hours=2)).strftime("%H:%M"))
+    pg.wait_for_selector("text=cách nhau ít nhất 6 giờ")
+    pg.fill("#c-time-1", (when + timedelta(hours=7)).strftime("%H:%M"))
+    assert pg.locator("button:has-text('Thêm giờ')").is_disabled(), "add-time button should be disabled at 2 times"
+    pg.click("button[aria-label='Xóa giờ chạy 2']")
+    deadline = time.time() + 150
+    while len(posted) < 3 and time.time() < deadline: time.sleep(2)
+    print("posted after schedule:", posted)
+    assert posted[2:] == ["Hello Schedule"], posted
+    pg.click("button:has-text('Nhật ký')"); time.sleep(1)
+    assert "Đã bắt đầu chạy: 1 nhóm" in pg.locator("tbody").inner_text()
+    assert not errors
     print("SMOKE OK")
     ctx.close()

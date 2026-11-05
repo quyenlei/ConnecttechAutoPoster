@@ -1,7 +1,7 @@
 # User Guide
 
 ## Install (internal distribution)
-CAP is shared as a zip file, for example `connecttech-auto-poster-0.1.0-chrome.zip`. It is not on the Chrome Web Store.
+CAP is shared as a zip file, for example `connecttech-auto-poster-0.2.0-chrome.zip`. It is not on the Chrome Web Store.
 
 1. Unzip it into a folder you will keep, for example `~/connecttech-cap`. Do not move or delete this folder. Chrome reads the extension from it.
 2. Open `chrome://extensions`.
@@ -51,6 +51,16 @@ The run bar is visible on every tab.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
 - CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
 - The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
+
+### Daily schedule (Hẹn giờ chạy)
+In the campaign editor, section **Thời gian và an toàn**, tick **Tự động chạy chiến dịch này mỗi ngày**, then **Thêm giờ**.
+- Up to 2 times per day, at least 6 hours apart (including across midnight). Times use your computer's clock.
+- The line **Lần chạy tiếp theo** shows the next start. Press **Lưu** to apply the schedule.
+- Chrome must be open and logged in to Facebook. If a time passes while Chrome is closed or the computer sleeps, it is skipped when more than 10 minutes late ("Bỏ lỡ lịch HH:mm" in the log).
+- If another run is active at that time, the scheduled start is skipped.
+- If Facebook shows a checkpoint or block, all schedules turn off. Turn them back on after you resolve it on Facebook.
+- Posting the same text twice a day can look like spam; add more versions.
+- Verified only on the local mock, not on live Facebook.
 
 ## 4. Activity (tab Nhật ký)
 Shows every attempt: **Đã đăng** (posted), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.

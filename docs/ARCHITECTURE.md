@@ -44,7 +44,7 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 ## Data model (`src/lib/types.ts`)
 
 - `Group { id (slug), name, url }`
-- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, createdAt }`
+- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, schedule?{enabled,times["HH:mm"]}, createdAt }`
 - `LogEntry { id, ts, campaignId, groupId, groupName, status, message }` (last 2000 kept)
 - `RunState { status, campaignId, queue[], total, attempted, consecutiveFailures, sinceBreak, nextAt, reason }`
 - `PostOutcome = posted | skipped | failed | fatal`
@@ -58,6 +58,14 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 3. **applyOutcome** (pure): `fatal → halted`; failures in a row ≥ 5 → `paused`; queue empty → `done`; every N attempts → Safety Break; else next = now + random delay.
 4. A Stop/Pause pressed during a step wins: the outcome is logged but the state is not advanced.
 5. On service-worker start, `restoreSchedule` recreates the alarm from `RunState.nextAt`.
+
+## Daily schedule
+
+- Pure logic lives in `lib/schedule.ts` (normalise, validate, `nextOccurrence`, `dueOccurrences`, `isMissed`). Local time is recomputed on each call, so DST and time-zone changes are handled.
+- One alarm, `cap-schedule`, points at the earliest next slot over all campaigns with the schedule on. It is recomputed when the alarm fires, when a campaign is saved or deleted, and when the service worker starts.
+- When slots are due, `processSchedule` calls `startRun`, the same function behind `cap/run/start` (same `validateCampaign`, `createRun`, `LIMITS`). If a run is active the slot is skipped and logged. A slot more than 10 minutes late is logged as missed and not run.
+- `local:scheduleCheck` stores the time of the last check so slots missed while Chrome was closed can be told apart from new ones. Saving a campaign resets it to now.
+- A `halted` run calls `disableAllSchedules`.
 
 ## Content script
 

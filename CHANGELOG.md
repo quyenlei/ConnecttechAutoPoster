@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.2.0] - 2026-11-05
+
+### Added
+- Daily schedule per campaign (opt-in, off by default): up to 2 local start times, at least 6 hours apart, using the existing `alarms` permission. Only verified on the local mock, not on live Facebook.
+- A scheduled start is skipped when a run is active, and slots missed by more than 10 minutes are logged and not run late.
+- All schedules switch off automatically when a run is halted by a checkpoint or block.
+- New limits in `lib/limits.ts`: `maxScheduleTimesPerDay`, `minScheduleGapMinutes`, `scheduleGraceMinutes`.
+
+### Changed
+- "Maximum groups per campaign" validation message is now in Vietnamese.
+- Start logic is shared between the Start button and the schedule (`startRun`).
+
 ## [0.1.0] - 2026-11-05
 
 ### Changed

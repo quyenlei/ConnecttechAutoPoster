@@ -3,6 +3,7 @@ import { delayWarning, formatDuration, recommendDelay } from '@/lib/delay';
 import { newId } from '@/lib/id';
 import { DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
 import { isActive } from '@/lib/run-engine';
+import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/schedule';
 import { campaignsItem, groupsItem, runItem } from '@/lib/storage';
 import type { Campaign } from '@/lib/types';
 import { sendCommand, useItem } from '../hooks';
@@ -16,6 +17,15 @@ const blank = (): Campaign => ({
   safetyBreak: { ...DEFAULT_SAFETY_BREAK },
   createdAt: Date.now(),
 });
+
+const DEFAULT_SCHEDULE = { enabled: false, times: [] as string[] };
+
+/** A new time 12 hours after the last one, or 07:00 for the first. */
+function suggestTime(times: string[]): string {
+  const last = parseTime(times[times.length - 1] ?? '');
+  const mins = last === null ? 7 * 60 : (last + 12 * 60) % (24 * 60);
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
 
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
@@ -38,6 +48,17 @@ export function CampaignsView() {
     return ((draft.delay.minSec + draft.delay.maxSec) / 2) * (draft.groupIds.length - 1);
   }, [draft]);
 
+  const schedule = draft?.schedule ?? DEFAULT_SCHEDULE;
+  const scheduleTimes = normalizeTimes(schedule.times);
+  const scheduleError = validateTimes(scheduleTimes);
+  const scheduleBlocking = schedule.enabled ? scheduleError : null;
+  const nextRun = schedule.enabled && !scheduleError ? nextOccurrence(scheduleTimes, Date.now()) : null;
+  const variationCount = draft ? draft.variations.filter((v) => v.trim()).length : 0;
+
+  function patchSchedule(p: Partial<typeof DEFAULT_SCHEDULE>) {
+    patch({ schedule: { ...schedule, ...p } });
+  }
+
   function patch(p: Partial<Campaign>) {
     setDraft((d) => (d ? { ...d, ...p } : d));
     setMessage(null);
@@ -45,6 +66,10 @@ export function CampaignsView() {
 
   async function save(): Promise<Campaign | null> {
     if (!draft) return null;
+    if (scheduleBlocking) {
+      setMessage({ text: scheduleBlocking, danger: true });
+      return null;
+    }
     const clean: Campaign = {
       ...draft,
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
@@ -53,6 +78,7 @@ export function CampaignsView() {
         minSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec),
         maxSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec, draft.delay.maxSec),
       },
+      schedule: { enabled: schedule.enabled, times: scheduleError ? [] : scheduleTimes },
     };
     const list = await campaignsItem.getValue();
     await campaignsItem.setValue(list.some((c) => c.id === clean.id) ? list.map((c) => (c.id === clean.id ? clean : c)) : [...list, clean]);
@@ -191,6 +217,35 @@ export function CampaignsView() {
                 </div>
               )}
               {totalSec > 0 && <p className="u-muted">Thời gian ước tính (chưa tính thời gian nghỉ): khoảng {formatDuration(totalSec)}.</p>}
+
+              <fieldset className="campaigns__schedule">
+                <legend>Hẹn giờ chạy</legend>
+                <label className="campaigns__group">
+                  <input type="checkbox" checked={schedule.enabled} onChange={(e) => patchSchedule({ enabled: e.target.checked })} />
+                  Tự động chạy chiến dịch này mỗi ngày
+                </label>
+                {schedule.enabled && (
+                  <>
+                    <ul className="campaigns__schedule-list">
+                      {schedule.times.map((time, index) => (
+                        <li className="campaigns__schedule-time" key={index}>
+                          <label className="field__label" htmlFor={`c-time-${index}`}>Giờ chạy {index + 1}</label>
+                          <input id={`c-time-${index}`} className="field__control" type="time" value={time} onChange={(e) => patchSchedule({ times: schedule.times.map((t, i) => (i === index ? e.target.value : t)) })} />
+                          <button className="button button--small" type="button" aria-label={`Xóa giờ chạy ${index + 1}`} onClick={() => patchSchedule({ times: schedule.times.filter((_, i) => i !== index) })}>Xóa giờ</button>
+                        </li>
+                      ))}
+                    </ul>
+                    <button className="button button--small" type="button" disabled={schedule.times.length >= LIMITS.maxScheduleTimesPerDay} onClick={() => patchSchedule({ times: [...schedule.times, suggestTime(schedule.times)] })}>Thêm giờ</button>
+                    <p className="field__hint">Tối đa {LIMITS.maxScheduleTimesPerDay} mốc mỗi ngày, cách nhau ít nhất {LIMITS.minScheduleGapMinutes / 60} giờ. Giờ theo máy của bạn.</p>
+                    {scheduleError && <p className="notice notice--danger" role="alert">{scheduleError}</p>}
+                    {nextRun !== null && <p className="u-muted">Lần chạy tiếp theo: {new Date(nextRun).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</p>}
+                    {scheduleTimes.length >= 2 && variationCount < 2 && (
+                      <p className="notice">Đăng cùng một nội dung nhiều lần trong ngày dễ bị coi là spam. Hãy thêm phiên bản nội dung.</p>
+                    )}
+                    <p className="field__hint">Chrome phải đang mở và đã đăng nhập Facebook thì lịch mới chạy.</p>
+                  </>
+                )}
+              </fieldset>
             </div>
 
             {message && <p className={message.danger ? 'notice notice--danger' : 'u-muted'} role="status">{message.text}</p>}

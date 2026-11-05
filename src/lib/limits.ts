@@ -12,6 +12,12 @@ export const LIMITS = {
   tabLoadTimeoutMs: 45_000,
   /** Wait for the composer flow inside the page. */
   postTimeoutMs: 40_000,
+  /** Daily schedule: at most this many start times per campaign. */
+  maxScheduleTimesPerDay: 2,
+  /** Daily schedule: minimum gap between two start times, also across midnight. */
+  minScheduleGapMinutes: 360,
+  /** A scheduled start later than this is skipped, never run late. */
+  scheduleGraceMinutes: 10,
 } as const;
 
 export const DEFAULT_SAFETY_BREAK = { enabled: true, everyPosts: 10, breakMinutes: 15 } as const;

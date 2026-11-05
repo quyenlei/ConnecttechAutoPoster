@@ -17,6 +17,13 @@ export interface SafetyBreak {
   breakMinutes: number;
 }
 
+/** Opt-in daily start times, local time of this device. */
+export interface CampaignSchedule {
+  enabled: boolean;
+  /** "HH:mm", 24-hour. */
+  times: string[];
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -25,6 +32,7 @@ export interface Campaign {
   groupIds: string[];
   delay: DelayRange;
   safetyBreak: SafetyBreak;
+  schedule?: CampaignSchedule;
   createdAt: number;
 }
 

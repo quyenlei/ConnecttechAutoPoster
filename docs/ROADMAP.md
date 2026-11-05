@@ -21,7 +21,7 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 ## v0.4 data
 - [ ] Backup and restore (JSON export/import with preview; never includes Facebook data).
 - [ ] Group tags/folders and saved group lists.
-- [ ] Scheduled campaigns (start at a chosen time using alarms).
+- [x] Scheduled campaigns: fixed daily times (v0.2.0). Weekday or one-off dates are not planned yet.
 
 ## Later
 - [ ] i18n (Vietnamese UI), keyboard shortcuts.

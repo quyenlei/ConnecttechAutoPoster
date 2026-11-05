@@ -3,11 +3,13 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { LIMITS } from '@/lib/limits';
 import { isRunCommand, type CommandReply, type PostReply, type PostRequest, type RunCommand } from '@/lib/messages';
 import { applyOutcome, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
-import { appendLog, campaignsItem, groupsItem, runItem } from '@/lib/storage';
+import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
+import { appendLog, campaignsItem, groupsItem, runItem, scheduleCheckItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
+const SCHEDULE_ALARM = 'cap-schedule';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (r: CommandReply) => void) => {
@@ -18,10 +20,17 @@ export default defineBackground(() => {
 
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM) void runStep();
+    if (alarm.name === SCHEDULE_ALARM) void processSchedule();
   });
 
-  // The service worker can be restarted at any time; rebuild the timer from stored state.
+  // Saving or deleting a campaign changes the schedule. Nothing before "now" counts as due then.
+  campaignsItem.watch(() => {
+    void scheduleCheckItem.setValue(Date.now()).then(rescheduleAlarm);
+  });
+
+  // The service worker can be restarted at any time; rebuild the timers from stored state.
   void restoreSchedule();
+  void processSchedule();
 });
 
 async function restoreSchedule(): Promise<void> {
@@ -34,21 +43,80 @@ async function schedule(at: number | null): Promise<void> {
   if (at !== null) await browser.alarms.create(ALARM, { when: Math.max(at, Date.now() + 1000) });
 }
 
+const hhmm = (ts: number) => new Date(ts).toTimeString().slice(0, 5);
+
+/** Campaigns whose schedule is on and still respects the limits (stored data is not trusted). */
+async function scheduledCampaigns(): Promise<Campaign[]> {
+  return (await campaignsItem.getValue()).filter((c) => c.schedule?.enabled && validateTimes(c.schedule.times) === null);
+}
+
+/** Earliest upcoming slot over all campaigns that have the schedule on. */
+async function rescheduleAlarm(): Promise<void> {
+  const now = Date.now();
+  const slots = (await scheduledCampaigns())
+    .map((c) => nextOccurrence(c.schedule?.times ?? [], now))
+    .filter((t): t is number => t !== null);
+  await browser.alarms.clear(SCHEDULE_ALARM);
+  if (slots.length > 0) await browser.alarms.create(SCHEDULE_ALARM, { when: Math.min(...slots) });
+}
+
+let processing = false;
+
+/** Starts runs for slots that came due since the last check; skips late or overlapping ones. */
+async function processSchedule(): Promise<void> {
+  if (processing) return;
+  processing = true;
+  try {
+    const now = Date.now();
+    const since = (await scheduleCheckItem.getValue()) ?? now;
+    await scheduleCheckItem.setValue(now);
+    const due = (await scheduledCampaigns())
+      .flatMap((c) => dueOccurrences(c.schedule?.times ?? [], since, now).map((at) => ({ campaign: c, at })))
+      .sort((a, b) => a.at - b.at);
+
+    for (const { campaign, at } of due) {
+      const label = hhmm(at);
+      if (isMissed(at, now)) {
+        await log(campaign.id, null, 'info', `Bỏ lỡ lịch ${label}.`);
+        continue;
+      }
+      const reply = await startRun(campaign.id);
+      if (!reply.ok) await log(campaign.id, null, 'info', `Bỏ qua lịch ${label}: ${reply.error ?? 'không thể bắt đầu.'}`);
+    }
+  } finally {
+    processing = false;
+    await rescheduleAlarm();
+  }
+}
+
+/** Turns every schedule off. Used after a checkpoint or block: the user must re-enable it. */
+async function disableAllSchedules(campaignId: string): Promise<void> {
+  const list = await campaignsItem.getValue();
+  if (!list.some((c) => c.schedule?.enabled)) return;
+  await campaignsItem.setValue(list.map((c) => (c.schedule?.enabled ? { ...c, schedule: { ...c.schedule, enabled: false } } : c)));
+  await log(campaignId, null, 'info', 'Đã tắt toàn bộ lịch chạy vì Facebook yêu cầu kiểm tra hoặc chặn. Hãy bật lại sau khi xử lý xong trên Facebook.');
+}
+
+/** Shared by the Start button and the daily schedule. */
+async function startRun(campaignId: string): Promise<CommandReply> {
+  const run = await runItem.getValue();
+  if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
+  const campaign = (await campaignsItem.getValue()).find((c) => c.id === campaignId);
+  if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
+  const problem = validateCampaign(campaign);
+  if (problem) return { ok: false, error: problem };
+  const state = createRun(campaign, Date.now());
+  await runItem.setValue(state);
+  await log(campaign.id, null, 'info', `Đã bắt đầu chạy: ${state.total} nhóm.`);
+  void runStep(); // first post goes out immediately
+  return { ok: true };
+}
+
 async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
   const run = await runItem.getValue();
   switch (cmd.type) {
-    case 'cap/run/start': {
-      if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
-      const campaign = (await campaignsItem.getValue()).find((c) => c.id === cmd.campaignId);
-      if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-      const problem = validateCampaign(campaign);
-      if (problem) return { ok: false, error: problem };
-      const state = createRun(campaign, Date.now());
-      await runItem.setValue(state);
-      await log(campaign.id, null, 'info', `Đã bắt đầu chạy: ${state.total} nhóm.`);
-      void runStep(); // first post goes out immediately
-      return { ok: true };
-    }
+    case 'cap/run/start':
+      return startRun(cmd.campaignId);
     case 'cap/run/pause': {
       await runItem.setValue(pause(run));
       await schedule(null);
@@ -77,7 +145,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
 
 function validateCampaign(c: Campaign): string | null {
   if (c.groupIds.length === 0) return 'Hãy chọn ít nhất một nhóm.';
-  if (c.groupIds.length > LIMITS.maxGroupsPerCampaign) return `Maximum ${LIMITS.maxGroupsPerCampaign} groups per campaign.`;
+  if (c.groupIds.length > LIMITS.maxGroupsPerCampaign) return `Mỗi chiến dịch tối đa ${LIMITS.maxGroupsPerCampaign} nhóm.`;
   if (!c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
   if (c.variations.some((v) => v.length > LIMITS.maxPostLength)) return 'Bài đăng quá dài.';
   return null;
@@ -122,6 +190,7 @@ async function runStep(): Promise<void> {
     if (state.status === 'done') await log(campaign.id, null, 'info', 'Đã chạy xong.');
     if (state.status === 'halted' || state.status === 'paused') await log(campaign.id, null, 'info', state.reason ?? '');
     await runItem.setValue(state);
+    if (state.status === 'halted') await disableAllSchedules(campaign.id);
     await schedule(state.status === 'running' ? state.nextAt : null);
   } finally {
     stepping = false;

@@ -6,7 +6,7 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 - **You stay in control.** You choose the groups and the text; you can pause or stop any time.
 - **Safe by default.** Minimum wait, recommended delays, Safety Break, auto-pause after repeated failures, stop on Facebook warnings.
 
-> Status: **MVP v0.1.0**. The posting flow is verified end to end against a local mock of a group page. It has **not** been verified against live Facebook, whose layout changes often. See [Known limits](#known-limits).
+> Status: **MVP v0.2.0**. The posting flow is verified end to end against a local mock of a group page. It has **not** been verified against live Facebook, whose layout changes often. See [Known limits](#known-limits).
 
 ## Features (v0.1)
 
@@ -68,7 +68,7 @@ Start with 5–10 groups and the recommended delay.
 
 - Facebook offers **no public API** for posting to groups. CAP drives the visible web UI like a person would, so it can break when Facebook changes its markup. All selectors live in [`src/lib/fb-dom.ts`](src/lib/fb-dom.ts) with English and Vietnamese hints.
 - Browser must stay open; the posting tabs open in the background and close themselves.
-- Text posts only in v0.1 (no photos, links previews or scheduling yet).
+- Text posts only (no photos or link previews). Scheduling is limited to fixed daily times, max 2 per campaign (v0.2).
 - Automating Facebook can violate its Terms and can get an account limited. You are responsible for your use. See [docs/SAFETY_AND_PRIVACY.md](docs/SAFETY_AND_PRIVACY.md).
 
 ## Origin and independence
