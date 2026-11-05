@@ -6,6 +6,22 @@ export interface PostRequest {
   text: string;
 }
 
+export interface DiscoverRequest {
+  type: 'cap/discover-posts';
+  groupId: string;
+}
+
+export interface DiscoverReply {
+  urls: string[];
+  diagnostic?: string;
+  problem?: { kind: 'fatal' | 'skipped' | 'failed'; reason: string };
+}
+
+export interface CommentRequest {
+  type: 'cap/comment';
+  text: string;
+}
+
 /** Background -> content script: read the group name from the loaded page. */
 export interface GroupNameRequest {
   type: 'cap/group-name';

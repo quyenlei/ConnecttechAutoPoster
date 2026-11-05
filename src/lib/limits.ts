@@ -4,6 +4,7 @@ export const LIMITS = {
   minDelaySec: 30,
   maxDelaySec: 3600,
   maxGroupsPerCampaign: 100,
+  maxCommentsPerGroup: 100,
   maxVariations: 10,
   maxPostLength: 5000,
   /** Auto-pause the run after this many failures in a row. */

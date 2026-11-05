@@ -53,6 +53,15 @@ The run bar is visible on every tab.
 - **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
 - CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
+
+### Bình luận bài viết trong nhóm
+Trong trình soạn chiến dịch, chọn **Bình luận bài viết trong nhóm**, đặt số bài tối đa cho mỗi nhóm và nhập một hoặc nhiều phiên bản bình luận. Công cụ mở bảng tin với tham số `sorting_setting=RECENT_ACTIVITY`, chờ và cuộn tối đa bốn lần, rồi ưu tiên theo thời gian đăng trong số bài đã tải có liên kết và thời gian xác định được trong 24 giờ gần nhất. Thứ tự hoạt động gần đây không nhất thiết là thứ tự bài đăng mới nhất và Facebook có thể không áp dụng tham số này; đây không phải danh sách đầy đủ. Mỗi lượt bình luận áp dụng khoảng chờ và nghỉ an toàn như đăng bài. Các bài đã thử được ghi nhận trên thiết bị không tự hết hạn để tránh tự gửi lại, kể cả khi kết quả chưa rõ. Nếu không tìm thấy bài đủ điều kiện, lượt đó sẽ được bỏ qua và ghi số bài cùng số thẻ thời gian đọc được.
+
+Chức năng này chỉ được thiết kế để kiểm thử với mock cục bộ, chưa xác nhận hoạt động trên Facebook thật. Facebook có thể không cung cấp thời gian hoặc ô bình luận theo định dạng nhận diện được, khiến bài bị bỏ qua hoặc lượt chạy thất bại.
+Thời gian tương đối như “16 phút” hoặc “2 giờ trước” được đọc khi gắn trực tiếp với liên kết bài; thời gian này là ước lượng vì Facebook làm tròn.
+Công cụ cũng đọc ID, liên kết và thời gian tạo từ dữ liệu bài viết Facebook đưa vào trang, đối chiếu nhóm trước khi chọn bài.
+Khi không còn bài chưa thử mà công cụ xác định được trong nhóm hiện tại, các lượt còn lại của nhóm đó được bỏ qua và chiến dịch tiếp tục quét nhóm kế tiếp ngay, trừ khi đến kỳ nghỉ an toàn. Khoảng chờ sau lượt bình luận vẫn được áp dụng. Facebook vẫn có thể có bài khác mà công cụ chưa nhận diện được ID.
+Nếu thấy thông báo đã phát hiện ô bình luận nhưng không xác định được bài viết và thời gian đăng, cấu trúc Facebook hiện tại chưa được hỗ trợ; công cụ không tự gửi bình luận trong trường hợp này.
 - The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
 
 ### Daily schedule (Hẹn giờ chạy)

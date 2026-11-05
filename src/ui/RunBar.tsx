@@ -29,8 +29,8 @@ export function RunBar() {
           {run.total > 0 && (
             <span className="u-muted">
               {' '}
-              · {run.attempted}/{run.total} nhóm
-              {countdown !== null && ` · bài tiếp theo sau ${formatDuration(countdown)}`}
+              · {run.attempted}/{run.total} {campaign?.mode === 'comment' ? 'lượt bình luận' : 'nhóm'}
+              {countdown !== null && ` · lượt tiếp theo sau ${formatDuration(countdown)}`}
             </span>
           )}
           {run.reason && <p className="u-muted">{run.reason}</p>}

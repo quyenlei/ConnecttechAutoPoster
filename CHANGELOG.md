@@ -2,6 +2,28 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Not yet verified on the local mock or live Facebook.
+
+### Changed
+- Require a new visible comment as well as a cleared editor before reporting a comment as sent; uncertain submissions remain reserved.
+- Read Facebook's structured group feed stories and their absolute creation times when timestamp links have deferred URLs.
+- Advance immediately to the next group's scan when a group has no identifiable unattempted posts, while preserving the delay after submissions and safety breaks.
+- When a comment scan finds no unattempted identifiable posts, advance to the next group instead of repeatedly scanning the same group.
+- Resolve a deferred timestamp link from a unique post link in the same feed container, including comment links; ambiguous containers remain excluded.
+- Recognize Facebook's Vietnamese “Đăng bình luận” button observed after entering a comment.
+- Retain attempted post links without automatic expiry to prevent repeated comments; old run-slot markers expire after seven days.
+- Distinguish posts already attempted from feeds where no qualifying post can be identified; clarify that time-tag counts do not include link timestamps.
+- Find a single comment editor without requiring an article and look for its form's send button after entering text. Unverified on live Facebook.
+- Recognize group post links using a single `multi_permalinks` parameter when a readable timestamp is available.
+- Recognize recent relative timestamps on group post links when Facebook has not rendered the absolute-date tooltip.
+- Recognize Vietnamese absolute dates referenced by group post links in Facebook's saved DOM.
+- Open group feeds with `sorting_setting=RECENT_ACTIVITY` when discovering posts for comment campaigns; Facebook's response to this setting has not been verified live.
+- Detect comment editors in Facebook's saved Lexical markup and report an unsupported feed as a failure when post identity and age cannot be established. Sending remains unverified.
+- Comment discovery waits for the feed and scans additional loaded content, then prioritizes identifiable posts by timestamp. It reports how many articles and machine-readable timestamps it saw when no eligible post is found.
+
 ## [0.2.0] - 2026-11-05
 
 ### Added

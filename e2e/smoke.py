@@ -8,6 +8,14 @@ from playwright.sync_api import sync_playwright
 MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
 <div role="button" id="open">Write something...</div>
 <script>
+setTimeout(()=>{
+  const article=document.createElement('article'); article.setAttribute('role', 'article');
+  article.innerHTML='<time id="published"></time><a id="post-link">Bài viết</a><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button aria-label="Post comment" id="send-comment">Gửi</button>';
+  document.body.appendChild(article);
+  document.getElementById('published').setAttribute('datetime', new Date().toISOString());
+  document.getElementById('post-link').href = '/groups/' + location.pathname.split('/')[2] + '/posts/123/';
+  document.getElementById('send-comment').onclick=()=>{ const el=document.getElementById('comment'); fetch('/__comment?t='+encodeURIComponent(el.textContent)); const result=document.createElement('div'); result.dir='auto'; result.textContent=el.textContent; article.appendChild(result); el.textContent=''; };
+}, 2000);
 document.getElementById('open').onclick=()=>{
   const d=document.createElement('div'); d.setAttribute('role','dialog');
   d.innerHTML='<div role="textbox" contenteditable="true" id="tb"></div><div role="button" aria-label="Post" id="post">Post</div>';
@@ -19,11 +27,15 @@ document.getElementById('open').onclick=()=>{
 ext, exe, prof = [os.path.realpath(a) for a in sys.argv[1:4]]
 eid = ''.join(chr(97 + int(c, 16)) for c in hashlib.sha256(ext.encode()).hexdigest()[:32])
 posted = []
+comments = []
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/__posted'):
             posted.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
+            body, ctype = b'ok', 'text/plain'
+        elif self.path.startswith('/__comment'):
+            comments.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
             body, ctype = b'ok', 'text/plain'
         else:
             body, ctype = MOCK.encode(), 'text/html'
@@ -99,6 +111,17 @@ with sync_playwright() as p:
     assert posted[2:] == ["Hello Schedule"], posted
     pg.click("button:has-text('Nhật ký')"); time.sleep(1)
     assert "Đã bắt đầu chạy: 1 nhóm" in pg.locator("tbody").inner_text()
+    pg.click("button:has-text('Chiến dịch')")
+    pg.click("button:has-text('Tạo mới')")
+    pg.fill('#c-name', 'Smoke bình luận')
+    pg.select_option('#c-mode', 'comment')
+    pg.fill('#c-comment-limit', '1')
+    pg.fill('#c-var-0', 'Bình luận thử')
+    pg.check("label:has-text('Mock One') input")
+    pg.click("button:has-text('Lưu và chạy')")
+    pg.wait_for_selector('text=Đã bắt đầu chiến dịch bình luận.')
+    pg.wait_for_selector('.badge--done', timeout=90000)
+    assert comments == ['Bình luận thử'], comments
     assert not errors
     print("SMOKE OK")
     ctx.close()

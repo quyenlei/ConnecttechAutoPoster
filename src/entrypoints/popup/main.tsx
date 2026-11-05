@@ -8,6 +8,7 @@ function Popup() {
   return (
     <div className="popup">
       <h1 translate="no">Connecttech Auto Poster</h1>
+      <span className="shell__version">Phiên bản {browser.runtime.getManifest().version}</span>
       <RunBar />
       <button className="button button--primary" type="button" onClick={() => void browser.runtime.openOptionsPage()}>
         Mở bảng điều khiển

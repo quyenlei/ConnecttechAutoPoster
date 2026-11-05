@@ -24,6 +24,31 @@ describe('run engine', () => {
     expect(s.queue).toHaveLength(7);
   });
 
+  it('counts each comment as a separate delayed attempt', () => {
+    const c = campaign({ mode: 'comment', commentsPerGroup: 2, groupIds: ['g1', 'g2'] });
+    const run = createRun(c, NOW);
+    expect(run.queue).toEqual(['g1', 'g1', 'g2', 'g2']);
+    expect(run.total).toBe(4);
+    expect(applyOutcome(run, c, ok, NOW).state.nextAt).toBe(NOW + 60_000);
+  });
+
+  it('moves to the next group when no more identifiable posts remain', () => {
+    const c = campaign({ mode: 'comment', commentsPerGroup: 5, groupIds: ['g1', 'g2'] });
+    let run = createRun(c, NOW);
+    run = applyOutcome(run, c, ok, NOW).state;
+    run = applyOutcome(run, c, { kind: 'skipped', reason: 'no posts', skipRemainingGroup: true }, NOW).state;
+    expect(run.queue).toEqual(['g2', 'g2', 'g2', 'g2', 'g2']);
+    expect(run.attempted).toBe(5);
+    expect(run.nextAt).toBe(NOW);
+  });
+
+  it('keeps the safety break when advancing past a group', () => {
+    const c = campaign({ mode: 'comment', commentsPerGroup: 2, groupIds: ['g1', 'g2'], safetyBreak: { enabled: true, everyPosts: 1, breakMinutes: 10 } });
+    const result = applyOutcome(createRun(c, NOW), c, { kind: 'skipped', reason: 'no posts', skipRemainingGroup: true }, NOW);
+    expect(result.state.queue).toEqual(['g2', 'g2']);
+    expect(result.state.nextAt).toBe(NOW + 600_000);
+  });
+
   it('schedules the next post after the delay and consumes the queue', () => {
     const c = campaign();
     const { state } = applyOutcome(createRun(c, NOW), c, ok, NOW);
