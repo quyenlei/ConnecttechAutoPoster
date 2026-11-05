@@ -16,12 +16,16 @@ export const IDLE_RUN: RunState = {
 
 /** Starts a run. The first post is due immediately; waits only apply between posts. */
 export function createRun(campaign: Campaign, now: number): RunState {
+  const queue = campaign.mode === 'comment'
+    ? campaign.groupIds.flatMap((id) => Array.from({ length: campaign.commentsPerGroup ?? 1 }, () => id))
+    : [...campaign.groupIds];
   return {
     ...IDLE_RUN,
     status: 'running',
+    startedAt: now,
     campaignId: campaign.id,
-    queue: [...campaign.groupIds],
-    total: campaign.groupIds.length,
+    queue,
+    total: queue.length,
     nextAt: now,
   };
 }
@@ -50,8 +54,12 @@ export function applyOutcome(
   now: number,
   rng: Rng = Math.random,
 ): StepResult {
-  const queue = state.queue.slice(1);
-  const attempted = state.attempted + 1;
+  let consumed = 1;
+  if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
+    while (consumed < state.queue.length && state.queue[consumed] === state.queue[0]) consumed++;
+  }
+  const queue = state.queue.slice(consumed);
+  const attempted = state.attempted + consumed;
   const sinceBreak = state.sinceBreak + 1;
   const base = { ...state, queue, attempted, sinceBreak, nextAt: null as number | null, reason: null as string | null };
 
@@ -79,6 +87,11 @@ export function applyOutcome(
       state: { ...base, status: 'running', sinceBreak: 0, nextAt: now + sb.breakMinutes * 60_000 },
       breakMinutes: sb.breakMinutes,
     };
+  }
+
+  // The previous attempt already waited its delay before this read-only scan.
+  if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
+    return { state: { ...base, status: 'running', nextAt: now }, breakMinutes: null };
   }
 
   return {

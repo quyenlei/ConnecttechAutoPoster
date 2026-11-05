@@ -12,6 +12,8 @@ import { sendCommand, useItem } from '../hooks';
 const blank = (): Campaign => ({
   id: newId(),
   name: 'Chiến dịch mới',
+  mode: 'post',
+  commentsPerGroup: 5,
   variations: [''],
   groupIds: [],
   delay: recommendDelay(10),
@@ -54,8 +56,10 @@ export function CampaignsView() {
   const busy = run ? isActive(run) : false;
   const warning = draft ? delayWarning(draft.delay, draft.groupIds.length) : null;
   const totalSec = useMemo(() => {
-    if (!draft || draft.groupIds.length < 2) return 0;
-    return ((draft.delay.minSec + draft.delay.maxSec) / 2) * (draft.groupIds.length - 1);
+    if (!draft) return 0;
+    const attempts = draft.groupIds.length * (draft.mode === 'comment' ? (draft.commentsPerGroup ?? 0) : 1);
+    if (attempts < 2) return 0;
+    return ((draft.delay.minSec + draft.delay.maxSec) / 2) * (attempts - 1);
   }, [draft]);
 
   const schedule = draft?.schedule ?? DEFAULT_SCHEDULE;
@@ -83,6 +87,14 @@ export function CampaignsView() {
 
   async function save(): Promise<Campaign | null> {
     if (!draft) return null;
+    if (busy && run?.campaignId === draft.id) {
+      setMessage({ text: 'Hãy dừng lượt chạy trước khi sửa chiến dịch này.', danger: true });
+      return null;
+    }
+    if (draft.mode === 'comment' && (!Number.isInteger(draft.commentsPerGroup) || (draft.commentsPerGroup ?? 0) < 1 || (draft.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) {
+      setMessage({ text: `Số bài mỗi nhóm phải từ 1 đến ${LIMITS.maxCommentsPerGroup}.`, danger: true });
+      return null;
+    }
     if (scheduleBlocking) {
       setMessage({ text: scheduleBlocking, danger: true });
       return null;
@@ -111,11 +123,11 @@ export function CampaignsView() {
 
   async function launch() {
     if (!draft) return;
-    if (!window.confirm(`Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`)) return;
+    if (!window.confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`)) return;
     const c = await save();
     if (!c) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: c.id });
-    setMessage(reply.ok ? { text: 'Đã bắt đầu chạy. Bài đầu tiên sẽ được đăng ngay.', danger: false } : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
+    setMessage(reply.ok ? { text: draft.mode === 'comment' ? 'Đã bắt đầu chiến dịch bình luận.' : 'Đã bắt đầu chạy. Bài đầu tiên sẽ được đăng ngay.', danger: false } : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
   }
 
   async function remove(id: string, name: string) {
@@ -154,8 +166,23 @@ export function CampaignsView() {
               <input id="c-name" className="field__control" value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
             </div>
 
+            <div className="field">
+              <label className="field__label" htmlFor="c-mode">Loại chiến dịch</label>
+              <select id="c-mode" className="field__control" value={draft.mode ?? 'post'} onChange={(e) => patch({ mode: e.target.value === 'comment' ? 'comment' : 'post' })} disabled={busy && run?.campaignId === draft.id}>
+                <option value="post">Đăng bài vào nhóm</option>
+                <option value="comment">Bình luận bài viết trong nhóm</option>
+              </select>
+            </div>
+            {draft.mode === 'comment' && (
+              <div className="field">
+                <label className="field__label" htmlFor="c-comment-limit">Số bài tối đa mỗi nhóm</label>
+                <input id="c-comment-limit" className="field__control" type="number" min={1} max={LIMITS.maxCommentsPerGroup} value={draft.commentsPerGroup ?? 5} onChange={(e) => patch({ commentsPerGroup: num(e.target.value) })} />
+                <span className="field__hint">Chỉ xét bài có thời gian đăng xác định được trong 24 giờ qua. Bài đã xử lý sẽ không tự thử lại.</span>
+              </div>
+            )}
+
             <div className="campaigns__variation">
-              <h3>Nội dung bài đăng</h3>
+              <h3>{draft.mode === 'comment' ? 'Nội dung bình luận' : 'Nội dung bài đăng'}</h3>
               {draft.variations.map((v, i) => (
                 <div className="field" key={i}>
                   <label className="field__label" htmlFor={`c-var-${i}`}>Phiên bản {i + 1}</label>
@@ -179,7 +206,7 @@ export function CampaignsView() {
                 <button className="button button--small" type="button" disabled={draft.variations.length >= LIMITS.maxVariations} onClick={() => patch({ variations: [...draft.variations, ''] })}>
                   Thêm phiên bản khác
                 </button>
-                <span className="field__hint"> Các phiên bản được luân phiên giữa các nhóm để bài đăng không giống hệt nhau.</span>
+                <span className="field__hint"> Các phiên bản được sử dụng luân phiên.</span>
               </div>
             </div>
 
@@ -244,7 +271,7 @@ export function CampaignsView() {
               {draft.safetyBreak.enabled && (
                 <div className="campaigns__row">
                   <div className="field">
-                    <label className="field__label" htmlFor="c-every">Nghỉ sau số bài đăng</label>
+                    <label className="field__label" htmlFor="c-every">Nghỉ sau số lượt thực hiện</label>
                     <input id="c-every" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={100} value={draft.safetyBreak.everyPosts || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, everyPosts: num(e.target.value) } })} />
                   </div>
                   <div className="field">

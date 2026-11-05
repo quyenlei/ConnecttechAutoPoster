@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { browser } from 'wxt/browser';
 import { RunBar } from './RunBar';
 import { ActivityView } from './views/ActivityView';
 import { CampaignsView } from './views/CampaignsView';
@@ -41,6 +42,7 @@ export function App() {
             </span>
             <div className="shell__brand-text">
               <h1 translate="no">Connecttech Auto Poster</h1>
+              <span className="shell__version">Phiên bản {browser.runtime.getManifest().version}</span>
               <span className="u-muted">Chạy ngay trên thiết bị của bạn. Không cần tài khoản, không có máy chủ.</span>
             </div>
           </div>

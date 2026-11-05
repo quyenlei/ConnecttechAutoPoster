@@ -35,7 +35,7 @@ The smoke test maps `www.facebook.com` to `127.0.0.1:8443` and all other hosts t
 See [CLAUDE.md](../CLAUDE.md) and `.claude/rules/`. In short: strict TypeScript, logic in `lib/` with tests, SCSS BEM (`block__element-sub`), rem units, no `!important`, no new dependencies without a reason, minimal permissions.
 
 ## Release
-1. Update `version` in `package.json` and `CHANGELOG.md`.
+1. Update `CHANGELOG.md`. Each `pnpm build` increments the patch version in `package.json` before building; the resulting manifest version is displayed in the dashboard and popup. A failed build also consumes a version number. `pnpm dev` and `pnpm zip` do not increment it.
 2. `pnpm typecheck && pnpm test && ppnpm test:e2e`.
 3. `pnpm zip` → `.output/*.zip` for the Chrome Web Store.
 4. Review `docs/SAFETY_AND_PRIVACY.md` against any permission change (store review requires a justification per permission).

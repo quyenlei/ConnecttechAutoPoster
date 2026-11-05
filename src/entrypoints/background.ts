@@ -1,12 +1,12 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { LIMITS } from '@/lib/limits';
-import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand } from '@/lib/messages';
+import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest } from '@/lib/messages';
 import { applyOutcome, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, groupsItem, runItem, scheduleCheckItem } from '@/lib/storage';
+import { appendLog, campaignsItem, groupsItem, runItem, scheduleCheckItem, commentedPostsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
-import { hasPlaceholderName, withReadName } from '@/lib/groups';
+import { hasPlaceholderName, recentActivityGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
@@ -108,7 +108,9 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
   await runItem.setValue(state);
-  await log(campaign.id, null, 'info', `Đã bắt đầu chạy: ${state.total} nhóm.`);
+  await log(campaign.id, null, 'info', campaign.mode === 'comment'
+    ? `Đã bắt đầu chạy: tối đa ${state.total} lượt bình luận trên ${campaign.groupIds.length} nhóm.`
+    : `Đã bắt đầu chạy: ${state.total} nhóm.`);
   void runStep(); // first post goes out immediately
   return { ok: true };
 }
@@ -153,6 +155,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
 function validateCampaign(c: Campaign): string | null {
   if (c.groupIds.length === 0) return 'Hãy chọn ít nhất một nhóm.';
   if (c.groupIds.length > LIMITS.maxGroupsPerCampaign) return `Mỗi chiến dịch tối đa ${LIMITS.maxGroupsPerCampaign} nhóm.`;
+  if (c.mode === 'comment' && (!Number.isInteger(c.commentsPerGroup) || (c.commentsPerGroup ?? 0) < 1 || (c.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) return 'Số bài mỗi nhóm không hợp lệ.';
   if (!c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
   if (c.variations.some((v) => v.length > LIMITS.maxPostLength)) return 'Bài đăng quá dài.';
   return null;
@@ -181,7 +184,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? await postToGroup(group, text)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run) : await postToGroup(group, text)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -190,12 +193,12 @@ async function runStep(): Promise<void> {
     // The user may have pressed Stop/Pause while we were posting; honour that.
     const latest = await runItem.getValue();
     if (latest.status !== 'running') {
-      await log(campaign.id, logGroup, toStatus(outcome), describe(outcome));
+      await log(campaign.id, logGroup, toStatus(outcome), describe(outcome, campaign.mode));
       return;
     }
 
     const { state, breakMinutes } = applyOutcome(latest, campaign, outcome, Date.now());
-    await log(campaign.id, logGroup, toStatus(outcome), describe(outcome));
+    await log(campaign.id, logGroup, toStatus(outcome), describe(outcome, campaign.mode));
     if (breakMinutes !== null) await log(campaign.id, null, 'break', `Nghỉ an toàn: ${breakMinutes} phút.`);
     if (state.status === 'done') await log(campaign.id, null, 'info', 'Đã chạy xong.');
     if (state.status === 'halted' || state.status === 'paused') await log(campaign.id, null, 'info', state.reason ?? '');
@@ -277,6 +280,42 @@ async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
   }
 }
 
+async function commentInGroup(group: Group, text: string, run: RunState): Promise<PostOutcome> {
+  let tabId: number | undefined;
+  try {
+    const slot = `slot:${run.campaignId}:${run.startedAt}:${run.attempted}`;
+    const history = Object.fromEntries(Object.entries(await commentedPostsItem.getValue()).filter(([key, at]) => !key.startsWith('slot:') || at > Date.now() - 7 * 86400_000));
+    if (history[slot]) return { kind: 'skipped', reason: 'Lượt bình luận đã được xử lý trước khi gián đoạn.' };
+    const tab = await browser.tabs.create({ url: recentActivityGroupUrl(group.id), active: false });
+    tabId = tab.id;
+    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.' };
+    await waitForTab(tabId);
+    const request: DiscoverRequest = { type: 'cap/discover-posts', groupId: group.id };
+    const found = (await sendWithRetry(tabId, request)) as DiscoverReply;
+    if (found.problem) return found.problem;
+    const url = found.urls.find((candidate) => !history[candidate]);
+    if (!url) return { kind: 'skipped', skipRemainingGroup: true, reason: found.urls.length > 0
+      ? `Tìm thấy ${found.urls.length} bài trong 24 giờ, nhưng tất cả đã được thử trước đó.`
+      : `Không xác định được bài phù hợp trong 24 giờ. ${found.diagnostic ?? ''}`.trim() };
+    const latest = await runItem.getValue();
+    if (latest.status !== 'running' || latest.startedAt !== run.startedAt || latest.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
+    // Reserve both the post and this run slot before opening the editor: uncertain outcomes are never retried automatically.
+    const now = Date.now();
+    await commentedPostsItem.setValue({ ...history, [url]: now, [slot]: now });
+    await browser.tabs.update(tabId, { url });
+    await waitForTab(tabId);
+    await sendWithRetry(tabId, { type: 'cap/group-name' });
+    const beforeSubmit = await runItem.getValue();
+    if (beforeSubmit.status !== 'running' || beforeSubmit.startedAt !== run.startedAt || beforeSubmit.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
+    const comment: CommentRequest = { type: 'cap/comment', text };
+    return (await withTimeout(browser.tabs.sendMessage(tabId, comment), LIMITS.postTimeoutMs, 'Hết thời gian chờ bình luận.')) as PostOutcome;
+  } catch (e) {
+    return { kind: 'failed', reason: e instanceof Error ? e.message : String(e) };
+  } finally {
+    if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
+  }
+}
+
 function waitForTab(tabId: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => done(new Error('Trang nhóm tải quá lâu.')), LIMITS.tabLoadTimeoutMs);
@@ -294,7 +333,7 @@ function waitForTab(tabId: number): Promise<void> {
 }
 
 /** The content script may not be ready the instant the tab reports complete. */
-async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest): Promise<unknown> {
+async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | DiscoverRequest | CommentRequest): Promise<unknown> {
   let lastError: unknown;
   for (let i = 0; i < 8; i++) {
     try {
@@ -320,7 +359,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 const toStatus = (o: PostOutcome): LogStatus =>
   o.kind === 'posted' ? 'posted' : o.kind === 'skipped' ? 'skipped' : 'failed';
 
-const describe = (o: PostOutcome): string => (o.kind === 'posted' ? 'Đã gửi bài đăng.' : o.reason);
+const describe = (o: PostOutcome, mode?: Campaign['mode']): string => (o.kind === 'posted' ? mode === 'comment' ? 'Đã gửi bình luận.' : 'Đã gửi bài đăng.' : o.reason);
 
 async function log(campaignId: string, group: Group | null, status: LogStatus, message: string): Promise<void> {
   await appendLog({

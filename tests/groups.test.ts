@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { addToSelection, filterGroups, parseGroupList, parseGroupSlug, removeFromSelection, withReadName } from '../src/lib/groups';
+import { addToSelection, filterGroups, parseGroupList, parseGroupSlug, recentActivityGroupUrl, removeFromSelection, withReadName } from '../src/lib/groups';
 
 describe('parseGroupSlug', () => {
+  it('builds the recent activity feed URL for comment discovery', () => {
+    expect(recentActivityGroupUrl('2215021986104638')).toBe('https://www.facebook.com/groups/2215021986104638/?sorting_setting=RECENT_ACTIVITY');
+  });
   it('accepts group urls', () => {
     expect(parseGroupSlug('https://www.facebook.com/groups/123456/')).toBe('123456');
     expect(parseGroupSlug('https://facebook.com/groups/my.group-name/posts/1')).toBe('my.group-name');

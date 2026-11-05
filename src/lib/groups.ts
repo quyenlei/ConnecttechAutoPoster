@@ -19,6 +19,10 @@ export function canonicalGroupUrl(slug: string): string {
   return `https://www.facebook.com/groups/${slug}/`;
 }
 
+export function recentActivityGroupUrl(slug: string): string {
+  return `${canonicalGroupUrl(slug)}?sorting_setting=RECENT_ACTIVITY`;
+}
+
 export interface ParsedGroups {
   groups: Group[];
   rejected: string[];

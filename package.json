@@ -2,11 +2,11 @@
   "name": "connecttech-auto-poster",
   "description": "Connecttech Auto Poster (CAP): a local-first Chrome extension that helps you post to your Facebook groups with safe delays.",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.17",
   "type": "module",
   "scripts": {
     "dev": "wxt",
-    "build": "wxt build",
+    "build": "node scripts/build.mjs",
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
     "test:e2e": "pnpm build && python3 e2e/smoke.py .output/chrome-mv3 /usr/bin/chromium-browser .e2e-profile",

@@ -27,6 +27,9 @@ export interface CampaignSchedule {
 export interface Campaign {
   id: string;
   name: string;
+  /** Older campaigns without a mode remain post campaigns. */
+  mode?: 'post' | 'comment';
+  commentsPerGroup?: number;
   /** One or more post texts; they rotate across groups. */
   variations: string[];
   groupIds: string[];
@@ -53,6 +56,7 @@ export type RunStatus = 'idle' | 'running' | 'paused' | 'done' | 'stopped' | 'ha
 export interface RunState {
   status: RunStatus;
   campaignId: string | null;
+  startedAt?: number;
   /** Group ids still to be processed, in order. */
   queue: string[];
   total: number;
@@ -68,7 +72,7 @@ export interface RunState {
 
 export type PostOutcome =
   | { kind: 'posted' }
-  | { kind: 'skipped'; reason: string }
+  | { kind: 'skipped'; reason: string; skipRemainingGroup?: boolean }
   | { kind: 'failed'; reason: string }
   /** Facebook asked for a checkpoint / rate limit warning: stop everything. */
   | { kind: 'fatal'; reason: string };

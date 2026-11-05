@@ -27,6 +27,7 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 ## Privacy
 - No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries).
+- Comment campaigns keep attempted post links locally without automatic expiry and run-slot identifiers for seven days to avoid automatic retries after an uncertain submission.
 - CAP never reads, stores or transmits Facebook cookies, tokens or passwords. It uses the browser's existing logged-in session by opening normal tabs.
 - Uninstalling the extension deletes all data.
 
