@@ -30,6 +30,12 @@ describe('fb-dom', () => {
     document.body.textContent = 'Bạn không thể đăng trong nhóm này';
     expect(detectPageProblem(document, '/groups/1')?.kind).toBe('skip');
   });
+  it('finds the post button in any stacked dialog', () => {
+    document.body.innerHTML =
+      '<div role="dialog"><div role="button" aria-label="Đóng">Đóng</div></div>' +
+      '<div role="dialog"><div role="button" aria-label="Đăng">Đăng</div></div>';
+    expect(findPostButton(document)?.getAttribute('aria-label')).toBe('Đăng');
+  });
   it('detects join button', () => {
     document.body.innerHTML = '<div role="button">Join group</div>';
     expect(findJoinButton(document)).not.toBeNull();

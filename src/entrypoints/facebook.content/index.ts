@@ -54,7 +54,10 @@ async function submitPost(text: string): Promise<PostOutcome> {
     const b = findPostButton(document);
     return b && isEnabled(b) ? b : null;
   }, 10_000);
-  if (!button) return { kind: 'failed', reason: 'Không tìm thấy nút Đăng.' };
+  if (!button) {
+    const reason = findPostButton(document) ? 'Nút Đăng đang bị vô hiệu hóa (Facebook chưa nhận nội dung).' : 'Không tìm thấy nút Đăng.';
+    return { kind: 'failed', reason };
+  }
   button.click();
 
   // Success = the dialog closes. A blocked/limited warning may appear instead.

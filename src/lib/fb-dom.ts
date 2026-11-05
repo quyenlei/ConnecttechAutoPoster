@@ -71,9 +71,13 @@ export function findDialogTextbox(doc: Document): HTMLElement | null {
   return doc.querySelector<HTMLElement>('[role="dialog"] [role="textbox"][contenteditable="true"]');
 }
 
+/** Facebook can stack several dialogs, so look in every one and return the first match. */
 export function findPostButton(doc: Document): HTMLElement | null {
-  const dialog = doc.querySelector('[role="dialog"]');
-  return dialog ? findByText(dialog, '[role="button"]', HINTS.post) : null;
+  for (const dialog of doc.querySelectorAll('[role="dialog"]')) {
+    const button = findByText(dialog, '[role="button"]', HINTS.post);
+    if (button) return button;
+  }
+  return null;
 }
 
 export const isEnabled = (el: HTMLElement): boolean => el.getAttribute('aria-disabled') !== 'true';
