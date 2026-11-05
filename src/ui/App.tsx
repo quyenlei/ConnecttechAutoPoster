@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RunBar } from './RunBar';
 import { ActivityView } from './views/ActivityView';
 import { CampaignsView } from './views/CampaignsView';
@@ -18,6 +18,10 @@ const initialTab = (): TabId => {
 
 export function App() {
   const [tab, setTab] = useState<TabId>(initialTab);
+  useEffect(() => {
+    const label = TABS.find((t) => t.id === tab)?.label ?? '';
+    document.title = `${label} · Connecttech Auto Poster`;
+  }, [tab]);
   const go = (id: TabId) => {
     setTab(id);
     history.replaceState(null, '', `#${id}`);
@@ -25,11 +29,20 @@ export function App() {
 
   return (
     <>
+      <a className="u-skip-link" href="#main">Bỏ qua điều hướng</a>
       <header className="shell__header">
         <div className="container shell__header-inner">
           <div className="shell__brand">
-            <h1>Connecttech Auto Poster</h1>
-            <span className="u-muted">Chạy ngay trên thiết bị của bạn. Không cần tài khoản, không có máy chủ.</span>
+            <span className="shell__logo" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 2 11 13" />
+                <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
+              </svg>
+            </span>
+            <div className="shell__brand-text">
+              <h1 translate="no">Connecttech Auto Poster</h1>
+              <span className="u-muted">Chạy ngay trên thiết bị của bạn. Không cần tài khoản, không có máy chủ.</span>
+            </div>
           </div>
           <nav className="shell__tabs" aria-label="Điều hướng chính">
             {TABS.map((t) => (
@@ -40,7 +53,7 @@ export function App() {
           </nav>
         </div>
       </header>
-      <main className="container shell__main">
+      <main id="main" className="container shell__main" tabIndex={-1}>
         <div className="shell__stack">
           <RunBar />
           {tab === 'campaigns' && <CampaignsView />}

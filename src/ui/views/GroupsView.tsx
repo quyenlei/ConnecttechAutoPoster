@@ -26,7 +26,8 @@ export function GroupsView() {
     setText(parsed.rejected.join('\n'));
   }
 
-  async function remove(id: string) {
+  async function remove(id: string, name: string) {
+    if (!window.confirm(`Xóa nhóm “${name}”? Nhóm cũng sẽ bị gỡ khỏi mọi chiến dịch.`)) return;
     await groupsItem.setValue(groups.filter((g) => g.id !== id));
     const campaigns = await campaignsItem.getValue();
     await campaignsItem.setValue(campaigns.map((c) => ({ ...c, groupIds: c.groupIds.filter((g) => g !== id) })));
@@ -45,6 +46,8 @@ export function GroupsView() {
               id="group-list"
               className="field__control field__control--area"
               value={text}
+              spellCheck={false}
+              autoComplete="off"
               onChange={(e) => setText(e.target.value)}
               placeholder={'https://www.facebook.com/groups/example | Tên nhóm của tôi\nhttps://www.facebook.com/groups/123456789'}
             />
@@ -89,11 +92,11 @@ export function GroupsView() {
               </thead>
               <tbody>
                 {groups.map((g) => (
-                  <tr key={g.id}>
+                  <tr className="table__row" key={g.id}>
                     <td className="table__cell">{g.name}</td>
                     <td className="table__cell"><a href={g.url} target="_blank" rel="noreferrer noopener" title={`Mở ${g.name} trên Facebook`}>{g.url}</a></td>
                     <td className="table__cell">
-                      <button className="button button--small button--danger" type="button" onClick={() => remove(g.id)} aria-label={`Xóa ${g.name}`}>
+                      <button className="button button--small button--danger" type="button" onClick={() => remove(g.id, g.name)} aria-label={`Xóa ${g.name}`}>
                         Xóa
                       </button>
                     </td>

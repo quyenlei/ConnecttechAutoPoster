@@ -10,6 +10,10 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - All schedules switch off automatically when a run is halted by a checkpoint or block.
 - New limits in `lib/limits.ts`: `maxScheduleTimesPerDay`, `minScheduleGapMinutes`, `scheduleGraceMinutes`.
 
+- UI refresh: brand blue `#0148b9`, light and dark themes via CSS tokens (contrast checked at 4.5:1 or better), card shadows, pill tabs, badges with soft backgrounds, hover/focus/disabled states, skip link and per-tab page title. System fonts only, no remote assets.
+- Vietnamese run-status badges (Đang chạy, Tạm dừng, Hoàn tất...), popup button text, and "Xóa kết quả" label for clearing a finished run.
+- Confirmation before launching a run and before deleting a campaign, a group or the activity log. Stop stays instant. Warning when switching campaigns with unsaved changes.
+- Number fields can be cleared while typing; values are clamped on save. Activity table shows the latest 100 rows with "Xem thêm".
 - Campaign group picker: search by name, **Chọn tất cả** / **Bỏ chọn** (apply to the filtered list when a search is active), and a notice at the 100-group cap.
 - **Lấy tên nhóm** button on the groups tab and automatic name reading while posting, so groups show their real name instead of the id. Names you typed are never overwritten. Only verified on the local mock.
 

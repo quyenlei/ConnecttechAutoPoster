@@ -50,6 +50,7 @@ Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 ## 3. Run
 The run bar is visible on every tab.
 - The first post is sent immediately; waits apply between posts.
+- **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
 - CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
 - The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.

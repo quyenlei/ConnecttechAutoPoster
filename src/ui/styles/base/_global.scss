@@ -2,30 +2,48 @@
 
 :root {
   color-scheme: light dark;
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-border: #dfe3e8;
-  --color-text: #1b2430;
-  --color-muted: #5b6676;
-  --color-primary: #1f5eff;
+
+  // Brand: Connecttech blue.
+  --color-primary: #0148b9;
+  --color-primary-hover: #013a96;
   --color-primary-contrast: #ffffff;
-  --color-success: #12805c;
-  --color-warning: #a15c00;
-  --color-danger: #c4262e;
-  --color-focus: #1f5eff;
+  --color-primary-soft: #e6eefb;
+
+  --color-bg: #f3f6fb;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafd;
+  --color-border: #d9e1ee;
+  --color-text: #0f1b2d;
+  --color-muted: #4d5b73;
+
+  --color-success: #0b7a54;
+  --color-warning: #8f5200;
+  --color-danger: #c0262d;
+  --color-focus: #0148b9;
+
+  --shadow-card: 0 1px 2px rgb(15 27 45 / 6%), 0 1px 3px rgb(15 27 45 / 4%);
+  --shadow-raised: 0 4px 12px rgb(1 72 185 / 12%);
 
   @media (prefers-color-scheme: dark) {
-    --color-bg: #0f141b;
-    --color-surface: #18202a;
-    --color-border: #2b3644;
-    --color-text: #e8edf3;
-    --color-muted: #9aa7b8;
-    --color-primary: #6d97ff;
-    --color-primary-contrast: #0b1220;
+    --color-primary: #6aa2ff;
+    --color-primary-hover: #8bb7ff;
+    --color-primary-contrast: #07142e;
+    --color-primary-soft: #16294d;
+
+    --color-bg: #0a1020;
+    --color-surface: #121b30;
+    --color-surface-alt: #172238;
+    --color-border: #263349;
+    --color-text: #e7edf8;
+    --color-muted: #a3b3cc;
+
     --color-success: #4cc79b;
-    --color-warning: #e3a23a;
-    --color-danger: #ff7b83;
-    --color-focus: #8fb0ff;
+    --color-warning: #e9ac47;
+    --color-danger: #ff8a90;
+    --color-focus: #8bb7ff;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-raised: 0 4px 12px rgb(0 0 0 / 35%);
   }
 }
 
@@ -37,9 +55,18 @@ body {
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 0.9375rem;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 h1 {
@@ -66,6 +93,15 @@ a {
   outline-offset: 2px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+  }
+}
+
 .container {
   width: 100%;
   max-width: 75rem;
@@ -77,11 +113,34 @@ a {
   color: var(--color-muted);
 }
 
+.u-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
 .u-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  border: 0;
   white-space: nowrap;
+}
+
+.u-skip-link {
+  position: absolute;
+  top: $space-2;
+  left: $space-2;
+  z-index: 100;
+  padding: $space-2 $space-3;
+  border-radius: $radius;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  transform: translateY(-200%);
+
+  &:focus {
+    transform: none;
+  }
 }

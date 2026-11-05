@@ -30,6 +30,8 @@ function suggestTime(times: string[]): string {
 
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
+const stripIdentity = (c: Campaign) => JSON.stringify({ ...c, id: '', createdAt: 0 });
+
 export function CampaignsView() {
   const campaigns = useItem(campaignsItem) ?? [];
   const groups = useItem(groupsItem) ?? [];
@@ -43,6 +45,11 @@ export function CampaignsView() {
   }, [campaigns, draft]);
 
   const visibleGroups = useMemo(() => filterGroups(groups, groupQuery), [groups, groupQuery]);
+  const dirty = useMemo(() => {
+    if (!draft) return false;
+    const stored = campaigns.find((c) => c.id === draft.id);
+    return stored ? JSON.stringify(stored) !== JSON.stringify(draft) : stripIdentity(draft) !== stripIdentity(blank());
+  }, [campaigns, draft]);
   const saved = draft ? campaigns.some((c) => c.id === draft.id) : false;
   const busy = run ? isActive(run) : false;
   const warning = draft ? delayWarning(draft.delay, draft.groupIds.length) : null;
@@ -57,6 +64,13 @@ export function CampaignsView() {
   const scheduleBlocking = schedule.enabled ? scheduleError : null;
   const nextRun = schedule.enabled && !scheduleError ? nextOccurrence(scheduleTimes, Date.now()) : null;
   const variationCount = draft ? draft.variations.filter((v) => v.trim()).length : 0;
+
+  function select(next: Campaign) {
+    if (dirty && !window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?')) return;
+    setDraft(next);
+    setGroupQuery('');
+    setMessage(null);
+  }
 
   function patchSchedule(p: Partial<typeof DEFAULT_SCHEDULE>) {
     patch({ schedule: { ...schedule, ...p } });
@@ -81,6 +95,11 @@ export function CampaignsView() {
         minSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec),
         maxSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec, draft.delay.maxSec),
       },
+      safetyBreak: {
+        ...draft.safetyBreak,
+        everyPosts: Math.min(100, Math.max(1, draft.safetyBreak.everyPosts)),
+        breakMinutes: Math.min(240, Math.max(1, draft.safetyBreak.breakMinutes)),
+      },
       schedule: { enabled: schedule.enabled, times: scheduleError ? [] : scheduleTimes },
     };
     const list = await campaignsItem.getValue();
@@ -91,13 +110,16 @@ export function CampaignsView() {
   }
 
   async function launch() {
+    if (!draft) return;
+    if (!window.confirm(`Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`)) return;
     const c = await save();
     if (!c) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: c.id });
     setMessage(reply.ok ? { text: 'Đã bắt đầu chạy. Bài đầu tiên sẽ được đăng ngay.', danger: false } : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
   }
 
-  async function remove(id: string) {
+  async function remove(id: string, name: string) {
+    if (!window.confirm(`Xóa chiến dịch “${name}”? Thao tác này không thể hoàn tác.`)) return;
     await campaignsItem.setValue(campaigns.filter((c) => c.id !== id));
     setDraft(null);
   }
@@ -107,16 +129,16 @@ export function CampaignsView() {
       <section className="card" aria-label="Chiến dịch đã lưu">
         <div className="card__head">
           <h2>Chiến dịch</h2>
-          <button className="button button--small" type="button" onClick={() => setDraft(blank())}>Tạo mới</button>
+          <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>
         </div>
         {campaigns.length === 0 && <p className="u-muted">Chưa có chiến dịch nào được lưu.</p>}
         <ul>
           {campaigns.map((c) => (
             <li key={c.id} className="campaigns__list-item">
-              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => setDraft(c)}>
+              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => select(c)}>
                 {c.name}
               </button>
-              <button className="button button--small button--danger" type="button" onClick={() => remove(c.id)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
+              <button className="button button--small button--danger" type="button" onClick={() => remove(c.id, c.name)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
                 Xóa
               </button>
             </li>
@@ -161,7 +183,7 @@ export function CampaignsView() {
               </div>
             </div>
 
-            <div>
+            <div className="campaigns__section">
               <h3>Nhóm (đã chọn {draft.groupIds.length})</h3>
               {groups.length === 0 ? (
                 <p className="u-muted">Hãy thêm nhóm ở tab Nhóm trước.</p>
@@ -169,7 +191,7 @@ export function CampaignsView() {
                 <>
                   <div className="campaigns__groups-tools">
                     <label className="u-sr-only" htmlFor="c-group-search">Tìm nhóm theo tên</label>
-                    <input id="c-group-search" className="field__control" type="search" placeholder="Tìm nhóm theo tên" value={groupQuery} onChange={(e) => setGroupQuery(e.target.value)} />
+                    <input id="c-group-search" className="field__control field__control--grow" type="search" autoComplete="off" placeholder="Tìm nhóm theo tên" value={groupQuery} onChange={(e) => setGroupQuery(e.target.value)} />
                     <button className="button button--small" type="button" disabled={visibleGroups.length === 0} onClick={() => patch({ groupIds: addToSelection(draft.groupIds, visibleGroups.map((g) => g.id), LIMITS.maxGroupsPerCampaign) })}>
                       Chọn tất cả{groupQuery.trim() ? ' (đang lọc)' : ''}
                     </button>
@@ -195,16 +217,16 @@ export function CampaignsView() {
               )}
             </div>
 
-            <div>
+            <div className="campaigns__section">
               <h3>Thời gian và an toàn</h3>
               <div className="campaigns__row">
                 <div className="field">
                   <label className="field__label" htmlFor="c-min">Chờ tối thiểu (giây)</label>
-                  <input id="c-min" className="field__control" type="number" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.minSec} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
+                  <input id="c-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.minSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
                 </div>
                 <div className="field">
                   <label className="field__label" htmlFor="c-max">Chờ tối đa (giây)</label>
-                  <input id="c-max" className="field__control" type="number" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.maxSec} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
+                  <input id="c-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.maxSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
                 </div>
               </div>
               <p className="field__hint">
@@ -223,11 +245,11 @@ export function CampaignsView() {
                 <div className="campaigns__row">
                   <div className="field">
                     <label className="field__label" htmlFor="c-every">Nghỉ sau số bài đăng</label>
-                    <input id="c-every" className="field__control" type="number" min={1} max={100} value={draft.safetyBreak.everyPosts} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, everyPosts: Math.max(1, num(e.target.value)) } })} />
+                    <input id="c-every" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={100} value={draft.safetyBreak.everyPosts || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, everyPosts: num(e.target.value) } })} />
                   </div>
                   <div className="field">
                     <label className="field__label" htmlFor="c-break">Thời gian nghỉ (phút)</label>
-                    <input id="c-break" className="field__control" type="number" min={1} max={240} value={draft.safetyBreak.breakMinutes} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, breakMinutes: Math.max(1, num(e.target.value)) } })} />
+                    <input id="c-break" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={240} value={draft.safetyBreak.breakMinutes || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, breakMinutes: num(e.target.value) } })} />
                   </div>
                 </div>
               )}

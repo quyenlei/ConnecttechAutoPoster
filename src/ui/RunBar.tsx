@@ -3,6 +3,7 @@ import { formatDuration } from '@/lib/delay';
 import { isActive } from '@/lib/run-engine';
 import { campaignsItem, runItem } from '@/lib/storage';
 import { sendCommand, useItem, useNow } from './hooks';
+import { RUN_STATUS_LABEL } from './labels';
 
 export function RunBar() {
   const run = useItem(runItem);
@@ -23,7 +24,7 @@ export function RunBar() {
     <section className="card" aria-label="Trạng thái chạy">
       <div className="runbar">
         <div className="runbar__text">
-          <span className={`badge badge--${run.status}`}>{run.status}</span>{' '}
+          <span className={`badge badge--${run.status}`}>{RUN_STATUS_LABEL[run.status]}</span>{' '}
           <strong>{campaign?.name ?? 'Chưa có lượt chạy nào'}</strong>
           {run.total > 0 && (
             <span className="u-muted">
@@ -34,7 +35,7 @@ export function RunBar() {
           )}
           {run.reason && <p className="u-muted">{run.reason}</p>}
         </div>
-        {run.total > 0 && <progress className="runbar__progress" max={run.total} value={run.attempted} />}
+        {run.total > 0 && <progress className="runbar__progress" max={run.total} value={run.attempted} aria-label="Tiến độ đăng bài" />}
         <div className="runbar__actions">
           {run.status === 'running' && (
             <button className="button button--small" type="button" onClick={() => act('cap/run/pause')}>
@@ -53,7 +54,7 @@ export function RunBar() {
           )}
           {!isActive(run) && run.status !== 'idle' && (
             <button className="button button--small" type="button" onClick={() => act('cap/run/reset')}>
-              Xóa
+              Xóa kết quả
             </button>
           )}
         </div>
