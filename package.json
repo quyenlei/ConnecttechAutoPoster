@@ -1,0 +1,39 @@
+{
+  "name": "connecttech-auto-poster",
+  "description": "Connecttech Auto Poster (CAP): a local-first Chrome extension that helps you post to your Facebook groups with safe delays.",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "pnpm build && python3 e2e/smoke.py .output/chrome-mv3 /usr/bin/chromium-browser .e2e-profile",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "happy-dom": "^21.0.4",
+    "sass": "^1.107.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
+    "wxt": "^0.21.5"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+@use '../abstracts/variables' as *;
+
+.card {
+  padding: $space-4;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-lg;
+  background: var(--color-surface);
+
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    margin-bottom: $space-3;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+  }
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 62.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+
+  &--posted,
+  &--running,
+  &--done {
+    color: var(--color-success);
+  }
+
+  &--failed,
+  &--halted {
+    color: var(--color-danger);
+  }
+
+  &--skipped,
+  &--break,
+  &--paused {
+    color: var(--color-warning);
+  }
+
+  &--info,
+  &--idle,
+  &--stopped {
+    color: var(--color-muted);
+  }
+}
+
+.notice {
+  padding: $space-2 $space-3;
+  border: 1px solid var(--color-warning);
+  border-radius: $radius;
+  color: var(--color-warning);
+
+  &--danger {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
+}
