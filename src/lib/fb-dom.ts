@@ -4,22 +4,35 @@
  * in English and Vietnamese. When Facebook changes, update this file and its tests.
  */
 
-const lower = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
+/** Lowercase + NFC so Vietnamese text matches whichever Unicode form Facebook renders. */
+const lower = (s: string | null | undefined): string => (s ?? '').trim().normalize('NFC').toLowerCase();
 
 export const HINTS = {
-  composer: ['write something', 'create a public post', 'bạn viết gì đi', 'tạo bài viết công khai'],
+  composer: [
+    'write something',
+    'create a public post',
+    'bạn viết gì đi',
+    'viết gì đó',
+    'tạo bài viết công khai',
+    'tạo bài viết',
+  ],
   post: ['post', 'đăng'],
-  join: ['join group', 'tham gia nhóm'],
+  join: ['join group', 'tham gia nhóm', 'tham gia'],
   blocked: [
     "you're temporarily blocked",
     'you’re temporarily blocked',
     'we limit how often you can post',
     'bạn tạm thời bị chặn',
     'chúng tôi hạn chế tần suất',
+    'chúng tôi hạn chế số lần',
+    'bạn đang bị hạn chế đăng',
   ],
   cannotPost: [
     'only admins can post',
     'chỉ quản trị viên mới có thể đăng',
+    'chỉ quản trị viên mới được đăng',
+    'bạn không thể đăng trong nhóm này',
+    'bạn không thể đăng bài trong nhóm này',
     'you can’t post in this group',
     "you can't post in this group",
   ],

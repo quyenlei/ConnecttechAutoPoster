@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 ### Changed
 - Interface language is now Vietnamese (UI, run log messages, page `lang`). Facebook DOM text hints are unchanged.
 - User guide: added install and update steps for internal (zip + Load unpacked) distribution.
+- Facebook DOM hints: more Vietnamese phrases (composer, join, blocked, no permission) and NFC normalisation. Unverified on live Facebook.
 - Package manager is pnpm (`pnpm-lock.yaml`, `packageManager` field); `package-lock.json` removed.
 
 ### Added

@@ -15,6 +15,21 @@ describe('fb-dom', () => {
     document.body.innerHTML = '<div role="button">Like</div>';
     expect(findComposerTrigger(document)).toBeNull();
   });
+  it('matches Vietnamese hints regardless of Unicode form', () => {
+    const nfd = 'Viết gì đó...'.normalize('NFD');
+    document.body.innerHTML = `<div role="button">${nfd}</div>`;
+    expect(findComposerTrigger(document)).not.toBeNull();
+    document.body.innerHTML = '<div role="button">Tham gia nhóm</div>';
+    expect(findJoinButton(document)).not.toBeNull();
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Đăng">Đăng</div></div>';
+    expect(findPostButton(document)).not.toBeNull();
+  });
+  it('detects Vietnamese blocked and no-permission pages', () => {
+    document.body.textContent = 'Bạn tạm thời bị chặn';
+    expect(detectPageProblem(document, '/groups/1')?.kind).toBe('fatal');
+    document.body.textContent = 'Bạn không thể đăng trong nhóm này';
+    expect(detectPageProblem(document, '/groups/1')?.kind).toBe('skip');
+  });
   it('detects join button', () => {
     document.body.innerHTML = '<div role="button">Join group</div>';
     expect(findJoinButton(document)).not.toBeNull();
