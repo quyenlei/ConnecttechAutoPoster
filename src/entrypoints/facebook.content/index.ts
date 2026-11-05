@@ -40,9 +40,14 @@ async function submitPost(text: string): Promise<PostOutcome> {
     if (findJoinButton(document)) return { kind: 'skipped', reason: 'Bạn chưa là thành viên của nhóm này.' };
     return { kind: 'failed', reason: 'Không tìm thấy ô đăng bài. Có thể Facebook đã đổi giao diện.' };
   }
-  trigger.click();
-
-  const textbox = await waitFor(() => findDialogTextbox(document), 10_000);
+  // The first click can be lost if the page has not finished hydrating, so retry while no dialog is open.
+  let textbox: HTMLElement | null = null;
+  for (let attempt = 0; attempt < 3 && !textbox; attempt++) {
+    const target = attempt === 0 ? trigger : findComposerTrigger(document);
+    if (!target) break;
+    target.click();
+    textbox = await waitFor(() => findDialogTextbox(document), 6_000);
+  }
   if (!textbox) return { kind: 'failed', reason: 'Hộp thoại đăng bài không mở.' };
   textbox.focus();
   await pause(400);
