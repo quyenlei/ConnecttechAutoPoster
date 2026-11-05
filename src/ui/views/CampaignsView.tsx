@@ -126,7 +126,7 @@ export function CampaignsView() {
 
   return (
     <div className="campaigns__layout">
-      <section className="card" aria-label="Chiến dịch đã lưu">
+      <section className="card campaigns__sidebar" aria-label="Chiến dịch đã lưu">
         <div className="card__head">
           <h2>Chiến dịch</h2>
           <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>

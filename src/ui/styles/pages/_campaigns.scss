@@ -12,6 +12,19 @@
     }
   }
 
+  &__sidebar {
+    position: sticky;
+    top: $space-4;
+    align-self: start;
+    max-height: calc(100vh - #{$space-4} * 2);
+    overflow-y: auto;
+
+    @include laptop {
+      position: static;
+      max-height: none;
+    }
+  }
+
   &__list-item {
     display: flex;
     align-items: center;
