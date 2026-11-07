@@ -5,9 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 ## [Unreleased]
 
 ### Added
-- Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Not yet verified on the local mock or live Facebook.
+- Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Verified on the local mock (comment sent once, a re-run skips the already-attempted post, a group without a recent post is skipped); not yet verified on live Facebook.
 
 ### Changed
+- `pnpm test:e2e` now starts from a fresh browser profile, and the smoke test covers comment re-run protection and groups without an eligible post.
 - Require a new visible comment as well as a cleared editor before reporting a comment as sent; uncertain submissions remain reserved.
 - Read Facebook's structured group feed stories and their absolute creation times when timestamp links have deferred URLs.
 - Advance immediately to the next group's scan when a group has no identifiable unattempted posts, while preserving the delay after submissions and safety breaks.

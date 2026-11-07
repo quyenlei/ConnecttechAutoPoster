@@ -9,7 +9,7 @@
     "build": "node scripts/build.mjs",
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "pnpm build && python3 e2e/smoke.py .output/chrome-mv3 /usr/bin/chromium-browser .e2e-profile",
+    "test:e2e": "pnpm build && rm -rf .e2e-profile && python3 e2e/smoke.py .output/chrome-mv3 /usr/bin/chromium-browser .e2e-profile",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare"

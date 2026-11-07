@@ -9,6 +9,7 @@ MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</titl
 <div role="button" id="open">Write something...</div>
 <script>
 setTimeout(()=>{
+  if (location.pathname.split('/')[2] === 'mockempty') return; // a group with no recent post
   const article=document.createElement('article'); article.setAttribute('role', 'article');
   article.innerHTML='<time id="published"></time><a id="post-link">Bài viết</a><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button aria-label="Post comment" id="send-comment">Gửi</button>';
   document.body.appendChild(article);
@@ -122,6 +123,35 @@ with sync_playwright() as p:
     pg.wait_for_selector('text=Đã bắt đầu chiến dịch bình luận.')
     pg.wait_for_selector('.badge--done', timeout=90000)
     assert comments == ['Bình luận thử'], comments
+    assert not errors
+
+    def run_comment_campaign(name, group_label):
+        pg.click("button:has-text('Chiến dịch')")
+        pg.click("button:has-text('Tạo mới')")
+        pg.fill('#c-name', name)
+        pg.select_option('#c-mode', 'comment')
+        pg.fill('#c-comment-limit', '1')
+        pg.fill('#c-var-0', 'Bình luận thử')
+        pg.check(f"label:has-text('{group_label}') input")
+        pg.click("button:has-text('Lưu và chạy')")
+        pg.wait_for_selector('text=Đã bắt đầu chiến dịch bình luận.')
+
+    def wait_for_log(text):
+        pg.click("button:has-text('Nhật ký')")
+        pg.wait_for_selector(f"td:has-text('{text}')", timeout=90000)
+
+    # Re-running against the same group must not comment on the same post twice.
+    run_comment_campaign('Smoke bình luận lặp', 'Mock One')
+    wait_for_log('tất cả đã được thử trước đó')
+    assert comments == ['Bình luận thử'], f"post was commented twice: {comments}"
+
+    # A group with no recent post is skipped with a reason, and nothing is sent.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mockempty | Mock Empty')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Empty')")
+    run_comment_campaign('Smoke bình luận trống', 'Mock Empty')
+    wait_for_log('Không xác định được bài phù hợp trong 24 giờ')
+    assert comments == ['Bình luận thử'], f"comment sent without an eligible post: {comments}"
     assert not errors
     print("SMOKE OK")
     ctx.close()
