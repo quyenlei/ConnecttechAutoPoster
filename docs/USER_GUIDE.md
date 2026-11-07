@@ -53,6 +53,9 @@ The run bar is visible on every tab.
 - **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
 - CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
+- **Chạy tiếp**: after you press **Dừng**, a button **Chạy tiếp N nhóm còn lại** appears. It asks first, waits a fresh random delay, and skips groups that already have a posted or pending entry in that run (for example a post that went out just as you pressed Stop). It does not appear after a checkpoint/block. **Lưu và chạy** always starts from the first group again.
+- If a group fails before anything is sent (page did not load, composer not found), CAP tries the same group once more after 8 seconds; the log shows "Lỗi tạm thời, thử lại sau 8 giây". Failures that might have been submitted are never retried.
+- If Facebook holds the post for admin approval, the log shows **Chờ duyệt**. This counts as sent. Detection is not verified on live Facebook, so a pending post may still appear as **Đã đăng**.
 - The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
 
 ### Bình luận bài viết trong nhóm
@@ -74,8 +77,13 @@ In the campaign editor, section **Thời gian và an toàn**, tick **Tự độn
 - Posting the same text twice a day can look like spam; add more versions.
 - Verified only on the local mock, not on live Facebook.
 
-## 4. Activity (tab Nhật ký)
-Shows every attempt: **Đã đăng** (posted), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
+## 4. Overview (tab Tổng quan)
+Shows how many posts and comments were sent today and in the last 7 days (today plus the 6 days before), how many failed, and the success rate (sent ÷ sent + failed; skipped groups are not counted). Numbers come from the activity log, which keeps the latest 2000 entries, so clearing the log resets them.
+
+The checkbox **Thông báo trên máy…** (off by default) shows a desktop notification when a run finishes, pauses by itself or is halted. It contains the campaign name and counts only. Chrome and your operating system must allow notifications.
+
+## 5. Activity (tab Nhật ký)
+Shows every attempt: **Đã đăng** (posted), **Chờ duyệt** (sent, waiting for admin approval), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
 
 ## Troubleshooting
 | Message | Meaning / action |

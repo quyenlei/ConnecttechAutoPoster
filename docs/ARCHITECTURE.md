@@ -32,6 +32,8 @@ src/
 │  ├─ delay.ts                 random/clamped/recommended delays, warnings, formatting
 │  ├─ groups.ts                URL validation and bulk parsing
 │  ├─ schedule.ts              daily schedule: validation, next/due/missed slots
+│  ├─ stats.ts                 today / last-7-days counts and success rate from the log
+│  ├─ notify.ts                text of the run-finished notification
 │  ├─ run-engine.ts            pure run state machine
 │  ├─ fb-dom.ts                ALL Facebook selectors and text hints
 │  ├─ csv.ts                   CSV export with formula-injection guard
@@ -52,11 +54,12 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 
 ## Run lifecycle
 
-`idle → running ⇄ paused → done | stopped | halted`
+`idle → running ⇄ paused → done | stopped | halted`, and `stopped → running` through `continueRun`
 
 1. **start**: validate campaign, `createRun` (nextAt = now), run the first step immediately.
 2. **step** (`runStep`): take `queue[0]`; open the group in an inactive tab; wait for load (45 s); message the content script (retry up to 8 s); post timeout 40 s; always close the tab.
 3. **applyOutcome** (pure): `fatal → halted`; failures in a row ≥ 5 → `paused`; queue empty → `done`; every N attempts → Safety Break; else next = now + random delay.
+   A failure marked `retryable` (nothing was submitted) does not advance the queue the first time: `RunState.retrying` is set and the step repeats after `LIMITS.retryDelayMs`. Comment campaigns never retry. A `pending` outcome counts as sent.
 4. A Stop/Pause pressed during a step wins: the outcome is logged but the state is not advanced.
 5. On service-worker start, `restoreSchedule` recreates the alarm from `RunState.nextAt`.
 
@@ -71,6 +74,12 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 - When slots are due, `processSchedule` calls `startRun`, the same function behind `cap/run/start` (same `validateCampaign`, `createRun`, `LIMITS`). If a run is active the slot is skipped and logged. A slot more than 10 minutes late is logged as missed and not run.
 - `local:scheduleCheck` stores the time of the last check so slots missed while Chrome was closed can be told apart from new ones. Saving a campaign resets it to now.
 - A `halted` run calls `disableAllSchedules`.
+
+## Continue, notifications, overview
+
+- `continueRun` (pure) turns a `stopped` run back into `running` with a fresh delay and, for post campaigns, drops queued groups that have a posted or pending log entry since `startedAt`. The background refuses it while a step is still in flight.
+- `notifyRunEnd` runs after each step. It checks `local:settings.notifyOnFinish` (default off), asks `describeRunEnd` for the text and calls `notifications.create`. Errors are swallowed so a notification can never affect the run.
+- The Tổng quan view calls `summarize(logs, now)` on the stored log; there is no separate counter to keep in sync.
 
 ## Comment campaigns
 

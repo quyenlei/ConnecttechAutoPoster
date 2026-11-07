@@ -12,11 +12,11 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 
 ## Next: v0.2 reliability
 - [ ] Verify the flow against live Facebook on a test account and fix selectors (English and Vietnamese UI).
-- [ ] Detect "post is pending admin approval" and log it as `pending`.
-- [ ] Retry once on temporary errors (after 8 s).
-- [ ] Skip groups where the last attempt in this campaign already succeeded (resume after halt).
-- [ ] Dashboard summary: posts today, 7-day success rate.
-- [ ] Notifications (`notifications` permission) when a run finishes, pauses or halts.
+- [x] Detect "post is pending admin approval" and log it as `pending` (mock only; hints unverified on live Facebook).
+- [x] Retry once on temporary errors (after 8 s), only when nothing was submitted.
+- [x] Continue a stopped run, skipping groups already posted (**Chạy tiếp**). A halted run is deliberately not continuable.
+- [x] Dashboard summary: posts today, 7-day success rate (tab Tổng quan).
+- [x] Notifications (`notifications` permission, opt-in) when a run finishes, pauses or halts.
 
 ## v0.3 content
 - [ ] Photo attachments (file picker in the dialog).
