@@ -21,7 +21,8 @@ document.getElementById('open').onclick=()=>{
   const d=document.createElement('div'); d.setAttribute('role','dialog');
   d.innerHTML='<div role="textbox" contenteditable="true" id="tb"></div><div role="button" aria-label="Post" id="post">Post</div>';
   document.body.appendChild(d);
-  document.getElementById('post').onclick=()=>{ window.__posted=(window.__posted||[]); fetch('/__posted?t='+encodeURIComponent(document.getElementById('tb').textContent)); d.remove(); };
+  document.getElementById('post').onclick=()=>{ window.__posted=(window.__posted||[]); fetch('/__posted?t='+encodeURIComponent(document.getElementById('tb').textContent)); d.remove();
+    if (location.pathname.split('/')[2] === 'mockpending') { const n=document.createElement('div'); n.textContent='Your post is pending approval.'; document.body.appendChild(n); } };
 };
 </script></body></html>"""
 
@@ -152,6 +153,43 @@ with sync_playwright() as p:
     run_comment_campaign('Smoke bình luận trống', 'Mock Empty')
     wait_for_log('Không xác định được bài phù hợp trong 24 giờ')
     assert comments == ['Bình luận thử'], f"comment sent without an eligible post: {comments}"
+    assert not errors
+
+    # A group where admins approve posts: the post is logged as pending, not as posted.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mockpending | Mock Pending')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Pending')")
+    pg.click("button:has-text('Chiến dịch')")
+    pg.click("button:has-text('Tạo mới')")
+    pg.fill('#c-name', 'Smoke chờ duyệt'); pg.fill('#c-var-0', 'Hello Pending')
+    pg.check("label:has-text('Mock Pending') input")
+    pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    wait_for_log('đang chờ quản trị viên nhóm phê duyệt')
+    assert posted[-1] == 'Hello Pending', posted
+
+    # Stop a run after its first group, then continue: only the remaining group is posted.
+    before = len(posted)
+    pg.click("button:has-text('Chiến dịch')")
+    pg.click("button:has-text('Tạo mới')")
+    pg.fill('#c-name', 'Smoke tiếp tục'); pg.fill('#c-var-0', 'Hello Continue')
+    for lbl in ('Mock One', 'Mock Two'): pg.check(f"label:has-text('{lbl}') input")
+    pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('text=1/2 nhóm', timeout=90000)
+    pg.click("button:text-is('Dừng')")
+    pg.wait_for_selector("button:has-text('Chạy tiếp 1 nhóm còn lại')")
+    assert len(posted) == before + 1, posted
+    pg.click("button:has-text('Chạy tiếp 1 nhóm còn lại')")
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert posted[before:] == ['Hello Continue', 'Hello Continue'], posted
+    wait_for_log('Chạy tiếp lượt đã dừng')
+
+    # Overview: today's numbers are filled in and the notification option can be switched on.
+    pg.click("button:text-is('Tổng quan')")
+    pg.wait_for_selector('text=Tỉ lệ thành công')
+    assert pg.locator('.overview__stat-value').first.inner_text() != '0', "today's sent count should not be 0"
+    pg.check("label:has-text('Thông báo trên máy') input")
     assert not errors
     print("SMOKE OK")
     ctx.close()

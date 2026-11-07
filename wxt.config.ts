@@ -9,7 +9,7 @@ export default defineConfig({
     description:
       'Local-first helper to post to your Facebook groups with safe delays, a live log and no external servers.',
     // Keep permissions minimal. Add one only with a written reason in docs/SAFETY_AND_PRIVACY.md.
-    permissions: ['storage', 'alarms', 'tabs'],
+    permissions: ['storage', 'alarms', 'tabs', 'notifications'],
     host_permissions: ['*://*.facebook.com/*'],
     action: { default_title: 'Connecttech Auto Poster' },
   },

@@ -5,7 +5,7 @@ import type { LogStatus } from '@/lib/types';
 import { useItem } from '../hooks';
 import { LOG_STATUS_LABEL as STATUS_LABEL } from '../labels';
 
-const FILTERS: Array<LogStatus | 'all'> = ['all', 'posted', 'failed', 'skipped', 'break', 'info'];
+const FILTERS: Array<LogStatus | 'all'> = ['all', 'posted', 'pending', 'failed', 'skipped', 'break', 'info'];
 
 const PAGE_SIZE = 100;
 

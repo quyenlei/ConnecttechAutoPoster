@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findCommentTextbox, findCommentButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findCommentTextbox, findCommentButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -189,4 +189,15 @@ it('only counts visible matching comment text outside the editor', () => {
   visible.getClientRects = () => [{ } as DOMRect] as unknown as DOMRectList;
   document.querySelectorAll<HTMLElement>('[dir="auto"]')[1]!.getClientRects = () => [] as unknown as DOMRectList;
   expect(countVisibleCommentText(document, 'Xin chào')).toBe(1);
+});
+
+it('detects a pending-approval notice in English and Vietnamese', () => {
+  document.body.textContent = 'Your post is pending approval.';
+  expect(detectPendingApproval(document)).toBe(true);
+  document.body.textContent = 'Bài viết của bạn đang chờ phê duyệt'.normalize('NFD');
+  expect(detectPendingApproval(document)).toBe(true);
+  document.body.textContent = 'Bài viết của bạn đã được đăng.';
+  expect(detectPendingApproval(document)).toBe(false);
+  document.body.textContent = 'Pending posts';
+  expect(detectPendingApproval(document)).toBe(false);
 });

@@ -39,7 +39,8 @@ export interface Campaign {
   createdAt: number;
 }
 
-export type LogStatus = 'posted' | 'failed' | 'skipped' | 'break' | 'info';
+/** `pending`: submitted, but the group admins must approve the post first. */
+export type LogStatus = 'posted' | 'pending' | 'failed' | 'skipped' | 'break' | 'info';
 
 export interface LogEntry {
   id: string;
@@ -68,11 +69,22 @@ export interface RunState {
   /** Epoch ms of the next post; null when nothing is scheduled. */
   nextAt: number | null;
   reason: string | null;
+  /** True while the current group is being retried once after a temporary error. */
+  retrying?: boolean;
+}
+
+/** Local preferences. Everything is off until the user turns it on. */
+export interface Settings {
+  /** Show a desktop notification when a run finishes, pauses or is halted. */
+  notifyOnFinish: boolean;
 }
 
 export type PostOutcome =
   | { kind: 'posted' }
+  /** Submitted, but the group needs admin approval before the post is visible. */
+  | { kind: 'pending' }
   | { kind: 'skipped'; reason: string; skipRemainingGroup?: boolean }
-  | { kind: 'failed'; reason: string }
+  /** `retryable` is only set when nothing was submitted, so a second attempt cannot double-post. */
+  | { kind: 'failed'; reason: string; retryable?: boolean }
   /** Facebook asked for a checkpoint / rate limit warning: stop everything. */
   | { kind: 'fatal'; reason: string };

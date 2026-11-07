@@ -1,6 +1,6 @@
 import { randomDelaySec, type Rng } from './delay';
 import { LIMITS } from './limits';
-import type { Campaign, PostOutcome, RunState } from './types';
+import type { Campaign, LogEntry, PostOutcome, RunState } from './types';
 
 export const IDLE_RUN: RunState = {
   status: 'idle',
@@ -41,6 +41,8 @@ export interface StepResult {
   state: RunState;
   /** Set when a Safety Break was just scheduled. */
   breakMinutes: number | null;
+  /** True when the same group will be tried again shortly instead of moving on. */
+  retry: boolean;
 }
 
 /**
@@ -54,6 +56,15 @@ export function applyOutcome(
   now: number,
   rng: Rng = Math.random,
 ): StepResult {
+  // A temporary error before anything was submitted gets one more try. Comments are never retried.
+  if (outcome.kind === 'failed' && outcome.retryable && !state.retrying && campaign.mode !== 'comment') {
+    return {
+      state: { ...state, retrying: true, nextAt: now + LIMITS.retryDelayMs, reason: null },
+      breakMinutes: null,
+      retry: true,
+    };
+  }
+
   let consumed = 1;
   if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
     while (consumed < state.queue.length && state.queue[consumed] === state.queue[0]) consumed++;
@@ -61,10 +72,10 @@ export function applyOutcome(
   const queue = state.queue.slice(consumed);
   const attempted = state.attempted + consumed;
   const sinceBreak = state.sinceBreak + 1;
-  const base = { ...state, queue, attempted, sinceBreak, nextAt: null as number | null, reason: null as string | null };
+  const base = { ...state, queue, attempted, sinceBreak, retrying: undefined, nextAt: null as number | null, reason: null as string | null };
 
   if (outcome.kind === 'fatal') {
-    return { state: { ...base, status: 'halted', reason: outcome.reason }, breakMinutes: null };
+    return { state: { ...base, status: 'halted', reason: outcome.reason }, breakMinutes: null, retry: false };
   }
 
   const consecutiveFailures = outcome.kind === 'failed' ? state.consecutiveFailures + 1 : 0;
@@ -74,11 +85,12 @@ export function applyOutcome(
     return {
       state: { ...base, status: 'paused', reason: `${consecutiveFailures} failures in a row. Check Facebook, then resume.` },
       breakMinutes: null,
+      retry: false,
     };
   }
 
   if (queue.length === 0) {
-    return { state: { ...base, status: 'done' }, breakMinutes: null };
+    return { state: { ...base, status: 'done' }, breakMinutes: null, retry: false };
   }
 
   const sb = campaign.safetyBreak;
@@ -86,17 +98,19 @@ export function applyOutcome(
     return {
       state: { ...base, status: 'running', sinceBreak: 0, nextAt: now + sb.breakMinutes * 60_000 },
       breakMinutes: sb.breakMinutes,
+      retry: false,
     };
   }
 
   // The previous attempt already waited its delay before this read-only scan.
   if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
-    return { state: { ...base, status: 'running', nextAt: now }, breakMinutes: null };
+    return { state: { ...base, status: 'running', nextAt: now }, breakMinutes: null, retry: false };
   }
 
   return {
     state: { ...base, status: 'running', nextAt: now + randomDelaySec(campaign.delay, rng) * 1000 },
     breakMinutes: null,
+    retry: false,
   };
 }
 
@@ -114,6 +128,26 @@ export function resume(state: RunState, campaign: Campaign, now: number, rng: Rn
     reason: null,
     nextAt: now + randomDelaySec(campaign.delay, rng) * 1000,
   };
+}
+
+/**
+ * Continues a run the user stopped. The wait before the next group is a fresh random delay, never instant.
+ * A post the user stopped mid-flight may have gone out already, so post campaigns drop every queued
+ * group that has a posted or pending log entry since the run started. Comment campaigns are protected
+ * by the reserved post links instead.
+ */
+export function continueRun(state: RunState, campaign: Campaign, logs: LogEntry[], now: number, rng: Rng = Math.random): RunState {
+  if (state.status !== 'stopped' || state.campaignId !== campaign.id) return state;
+  const sent = new Set(
+    logs
+      .filter((l) => l.campaignId === campaign.id && l.ts >= (state.startedAt ?? 0) && (l.status === 'posted' || l.status === 'pending'))
+      .map((l) => l.groupId),
+  );
+  const queue = campaign.mode === 'comment' ? state.queue : state.queue.filter((id) => !sent.has(id));
+  const attempted = state.attempted + (state.queue.length - queue.length);
+  const base = { ...state, queue, attempted, consecutiveFailures: 0, retrying: undefined, reason: null };
+  if (queue.length === 0) return { ...base, status: 'done', nextAt: null };
+  return { ...base, status: 'running', nextAt: now + randomDelaySec(campaign.delay, rng) * 1000 };
 }
 
 export function stop(state: RunState): RunState {

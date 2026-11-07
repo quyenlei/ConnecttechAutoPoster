@@ -4,10 +4,12 @@ import { RunBar } from './RunBar';
 import { ActivityView } from './views/ActivityView';
 import { CampaignsView } from './views/CampaignsView';
 import { GroupsView } from './views/GroupsView';
+import { OverviewView } from './views/OverviewView';
 
 const TABS = [
   { id: 'campaigns', label: 'Chiến dịch' },
   { id: 'groups', label: 'Nhóm' },
+  { id: 'overview', label: 'Tổng quan' },
   { id: 'activity', label: 'Nhật ký' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
@@ -60,6 +62,7 @@ export function App() {
           <RunBar />
           {tab === 'campaigns' && <CampaignsView />}
           {tab === 'groups' && <GroupsView />}
+          {tab === 'overview' && <OverviewView />}
           {tab === 'activity' && <ActivityView />}
         </div>
       </main>

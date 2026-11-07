@@ -15,6 +15,14 @@ export function RunBar() {
   const campaign = campaigns?.find((c) => c.id === run.campaignId);
   const countdown = run.status === 'running' && run.nextAt ? Math.max(0, Math.round((run.nextAt - now) / 1000)) : null;
 
+  const unit = campaign?.mode === 'comment' ? 'lượt bình luận' : 'nhóm';
+
+  async function continuePrevious() {
+    if (!window.confirm(`Chạy tiếp ${run?.queue.length ?? 0} ${unit} còn lại? Nhóm đã đăng ở lượt trước sẽ được bỏ qua. Lượt tiếp theo bắt đầu sau một khoảng chờ ngẫu nhiên.`)) return;
+    const reply = await sendCommand({ type: 'cap/run/continue' });
+    setError(reply.ok ? null : (reply.error ?? 'Thao tác thất bại.'));
+  }
+
   async function act(type: 'cap/run/pause' | 'cap/run/resume' | 'cap/run/stop' | 'cap/run/reset') {
     const reply = await sendCommand({ type });
     setError(reply.ok ? null : (reply.error ?? 'Thao tác thất bại.'));
@@ -29,7 +37,7 @@ export function RunBar() {
           {run.total > 0 && (
             <span className="u-muted">
               {' '}
-              · {run.attempted}/{run.total} {campaign?.mode === 'comment' ? 'lượt bình luận' : 'nhóm'}
+              · {run.attempted}/{run.total} {unit}
               {countdown !== null && ` · lượt tiếp theo sau ${formatDuration(countdown)}`}
             </span>
           )}
@@ -50,6 +58,11 @@ export function RunBar() {
           {isActive(run) && (
             <button className="button button--small button--danger" type="button" onClick={() => act('cap/run/stop')}>
               Dừng
+            </button>
+          )}
+          {run.status === 'stopped' && run.queue.length > 0 && campaign && (
+            <button className="button button--small button--primary" type="button" onClick={continuePrevious}>
+              Chạy tiếp {run.queue.length} {unit} còn lại
             </button>
           )}
           {!isActive(run) && run.status !== 'idle' && (

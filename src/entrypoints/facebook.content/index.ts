@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import {
   detectPageProblem,
+  detectPendingApproval,
   findComposerTrigger,
   findDialogTextbox,
   findJoinButton,
@@ -114,7 +115,7 @@ async function submitPost(text: string): Promise<PostOutcome> {
   const trigger = await waitFor(() => findComposerTrigger(document), 15_000);
   if (!trigger) {
     if (findJoinButton(document)) return { kind: 'skipped', reason: 'Bạn chưa là thành viên của nhóm này.' };
-    return { kind: 'failed', reason: 'Không tìm thấy ô đăng bài. Có thể Facebook đã đổi giao diện.' };
+    return { kind: 'failed', reason: 'Không tìm thấy ô đăng bài. Có thể Facebook đã đổi giao diện.', retryable: true };
   }
   // The first click can be lost if the page has not finished hydrating, so retry while no dialog is open.
   let textbox: HTMLElement | null = null;
@@ -124,12 +125,12 @@ async function submitPost(text: string): Promise<PostOutcome> {
     target.click();
     textbox = await waitFor(() => findDialogTextbox(document), 6_000);
   }
-  if (!textbox) return { kind: 'failed', reason: 'Hộp thoại đăng bài không mở.' };
+  if (!textbox) return { kind: 'failed', reason: 'Hộp thoại đăng bài không mở.', retryable: true };
   textbox.focus();
   await pause(400);
   document.execCommand('insertText', false, text);
   await pause(600);
-  if (!(textbox.textContent ?? '').trim()) return { kind: 'failed', reason: 'Không nhập được nội dung vào ô đăng bài.' };
+  if (!(textbox.textContent ?? '').trim()) return { kind: 'failed', reason: 'Không nhập được nội dung vào ô đăng bài.', retryable: true };
 
   const button = await waitFor(() => {
     const b = findPostButton(document);
@@ -137,13 +138,16 @@ async function submitPost(text: string): Promise<PostOutcome> {
   }, 10_000);
   if (!button) {
     const reason = findPostButton(document) ? 'Nút Đăng đang bị vô hiệu hóa (Facebook chưa nhận nội dung).' : 'Không tìm thấy nút Đăng.';
-    return { kind: 'failed', reason };
+    return { kind: 'failed', reason, retryable: true };
   }
+  // Admins may see an approval notice all the time, so only a notice that appears after Post counts.
+  const pendingBefore = detectPendingApproval(document);
   button.click();
 
   // Success = the dialog closes or its textbox is emptied. A blocked/limited warning may appear instead.
   const closed = await waitFor(() => isComposerSubmitted(document), 30_000, 500);
   const late = detectPageProblem(document, location.pathname);
   if (late?.kind === 'fatal') return { kind: 'fatal', reason: late.reason };
+  if (closed && !pendingBefore && (await waitFor(() => detectPendingApproval(document), 4_000))) return { kind: 'pending' };
   return closed ? { kind: 'posted' } : { kind: 'failed', reason: `Facebook không xác nhận bài đăng (${describeDialogState(document)}).` };
 }

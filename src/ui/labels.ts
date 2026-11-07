@@ -12,6 +12,7 @@ export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
 export const LOG_STATUS_LABEL: Record<LogStatus | 'all', string> = {
   all: 'Tất cả',
   posted: 'Đã đăng',
+  pending: 'Chờ duyệt',
   failed: 'Thất bại',
   skipped: 'Đã bỏ qua',
   break: 'Nghỉ an toàn',

@@ -27,6 +27,16 @@ export const HINTS = {
     'chúng tôi hạn chế số lần',
     'bạn đang bị hạn chế đăng',
   ],
+  /** Shown after posting in a group where admins approve posts first. Unverified on live Facebook. */
+  pending: [
+    'pending approval',
+    'awaiting approval',
+    'waiting for approval',
+    'đang chờ phê duyệt',
+    'đang chờ duyệt',
+    'chờ phê duyệt',
+    'chờ quản trị viên phê duyệt',
+  ],
   cannotPost: [
     'only admins can post',
     'chỉ quản trị viên mới có thể đăng',
@@ -53,6 +63,12 @@ export function detectPageProblem(doc: Document, pathname: string): PageProblem 
     return { kind: 'skip', reason: 'Bạn không thể đăng bài trong nhóm này.' };
   }
   return null;
+}
+
+/** True when the page shows a "pending approval" notice. Compare before and after posting: admins may see one all the time. */
+export function detectPendingApproval(doc: Document): boolean {
+  const text = lower(doc.body?.innerText ?? doc.body?.textContent);
+  return HINTS.pending.some((h) => text.includes(h));
 }
 
 export function findByText(root: ParentNode, selector: string, hints: readonly string[]): HTMLElement | null {
