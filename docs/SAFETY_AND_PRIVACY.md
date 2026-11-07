@@ -21,6 +21,10 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | Daily schedule is opt-in (off by default), max 2 start times per campaign per day, at least 6 hours apart (also across midnight) | `lib/schedule.ts`, `lib/limits.ts`, campaign editor |
 | A scheduled start is skipped, not queued, when a run is active; a slot missed by more than 10 minutes is never run late | background |
 | All schedules switch off automatically when a run is halted (checkpoint / blocked); you must re-enable them | background |
+| Comment campaigns use the same delay range, Safety Break, failure pause and halt rules as post campaigns; max 100 comments per group | `lib/run-engine.ts`, `lib/limits.ts` |
+| Comments only go to posts CAP can identify (link and time) within the last 24 hours; if identity or age is unknown, nothing is sent | `lib/fb-dom.ts` `findRecentGroupPosts` |
+| The post link and the run slot are saved before the comment editor opens, so a post is never commented twice and an uncertain submission is never retried automatically | background `commentInGroup` |
+| A comment counts as sent only when a new visible comment appears and the editor is cleared | content script |
 
 CAP deliberately has **no** features for evading detection (fingerprint spoofing, account rotation, proxies, humanized mouse emulation beyond a normal click, hidden posting). Do not add them.
 

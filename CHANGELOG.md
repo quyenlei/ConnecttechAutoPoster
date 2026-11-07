@@ -4,10 +4,13 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+Patch versions 0.2.1–0.2.18 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here until the next release is cut.
+
 ### Added
 - Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Verified on the local mock (comment sent once, a re-run skips the already-attempted post, a group without a recent post is skipped); not yet verified on live Facebook.
 
 ### Changed
+- Docs brought in line with the code: README status and feature table, comment campaigns in the user guide, safety rules, architecture and roadmap; fixed `ppnpm` typos in the development guide.
 - `pnpm test:e2e` now starts from a fresh browser profile, and the smoke test covers comment re-run protection and groups without an eligible post.
 - Require a new visible comment as well as a cleared editor before reporting a comment as sent; uncertain submissions remain reserved.
 - Read Facebook's structured group feed stories and their absolute creation times when timestamp links have deferred URLs.

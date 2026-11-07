@@ -31,6 +31,7 @@ src/
 │  ├─ types.ts  limits.ts  id.ts
 │  ├─ delay.ts                 random/clamped/recommended delays, warnings, formatting
 │  ├─ groups.ts                URL validation and bulk parsing
+│  ├─ schedule.ts              daily schedule: validation, next/due/missed slots
 │  ├─ run-engine.ts            pure run state machine
 │  ├─ fb-dom.ts                ALL Facebook selectors and text hints
 │  ├─ csv.ts                   CSV export with formula-injection guard
@@ -44,7 +45,7 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 ## Data model (`src/lib/types.ts`)
 
 - `Group { id (slug), name, url }`
-- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, schedule?{enabled,times["HH:mm"]}, createdAt }`
+- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, schedule?{enabled,times["HH:mm"]}, mode?: 'post' | 'comment', commentsPerGroup?, createdAt }` (no `mode` means a post campaign)
 - `LogEntry { id, ts, campaignId, groupId, groupName, status, message }` (last 2000 kept)
 - `RunState { status, campaignId, queue[], total, attempted, consecutiveFailures, sinceBreak, nextAt, reason }`
 - `PostOutcome = posted | skipped | failed | fatal`
@@ -70,6 +71,15 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 - When slots are due, `processSchedule` calls `startRun`, the same function behind `cap/run/start` (same `validateCampaign`, `createRun`, `LIMITS`). If a run is active the slot is skipped and logged. A slot more than 10 minutes late is logged as missed and not run.
 - `local:scheduleCheck` stores the time of the last check so slots missed while Chrome was closed can be told apart from new ones. Saving a campaign resets it to now.
 - A `halted` run calls `disableAllSchedules`.
+
+## Comment campaigns
+
+A campaign with `mode: 'comment'` goes through the same run engine; only the step differs (`commentInGroup` instead of `postToGroup`).
+
+1. Open the group feed with `sorting_setting=RECENT_ACTIVITY` and ask the content script (`cap/discover-posts`) for posts it can identify: a post link plus a creation time within 24 hours (`fb-dom.findRecentGroupPosts`).
+2. Pick the first link not in `local:commentedPosts`. If none, the step is `skipped` and the rest of that group is skipped (`skipRemainingGroup`); a feed where no post can be identified is reported as such.
+3. Save the post link and a run-slot key in `commentedPosts` **before** opening the editor. Post links never expire; slot keys expire after 7 days. An uncertain submission is therefore never retried.
+4. Open the post and send `cap/comment`. The content script counts a comment as sent only when a new visible comment appears and the editor is empty.
 
 ## Content script
 
