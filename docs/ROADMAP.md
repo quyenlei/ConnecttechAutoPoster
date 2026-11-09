@@ -11,7 +11,7 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 - [x] Comment campaigns on recent group posts. Verified on the local mock only, not on live Facebook.
 
 ## Next: v0.2 reliability
-- [ ] Verify the flow against live Facebook on a test account and fix selectors (English and Vietnamese UI).
+- [x] Verify the flow against live Facebook: the owner ran it by hand and confirmed it works. Which UI languages and features were covered is not recorded; keep re-checking when Facebook changes.
 - [x] Detect "post is pending admin approval" and log it as `pending` (mock only; hints unverified on live Facebook).
 - [x] Retry once on temporary errors (after 8 s), only when nothing was submitted.
 - [x] Continue a stopped run, skipping groups already posted (**Chạy tiếp**). A halted run is deliberately not continuable.

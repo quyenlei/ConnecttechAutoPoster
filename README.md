@@ -6,7 +6,7 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 - **You stay in control.** You choose the groups and the text; you can pause or stop any time.
 - **Safe by default.** Minimum wait, recommended delays, Safety Break, auto-pause after repeated failures, stop on Facebook warnings.
 
-> Status: **v0.2**. The posting, schedule and comment flows are verified end to end against a local mock of a group page. They have **not** been verified against live Facebook, whose layout changes often. See [Known limits](#known-limits).
+> Status: **v0.2**. The posting, schedule and comment flows are verified end to end against a local mock of a group page. The project owner has also run the extension by hand on live Facebook and confirmed that it works. That check was manual and is not covered by automated tests, and Facebook's layout changes often, so selectors may need fixing again. See [Known limits](#known-limits).
 
 ## Features
 

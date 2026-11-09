@@ -75,7 +75,7 @@ In the campaign editor, section **Thời gian và an toàn**, tick **Tự độn
 - If another run is active at that time, the scheduled start is skipped.
 - If Facebook shows a checkpoint or block, all schedules turn off. Turn them back on after you resolve it on Facebook.
 - Posting the same text twice a day can look like spam; add more versions.
-- Verified only on the local mock, not on live Facebook.
+- Automated tests use the local mock only. The owner confirmed by hand that the extension works on live Facebook.
 
 ## 4. Overview (tab Tổng quan)
 Shows how many posts and comments were sent today and in the last 7 days (today plus the 6 days before), how many failed, and the success rate (sent ÷ sent + failed; skipped groups are not counted). Numbers come from the activity log, which keeps the latest 2000 entries, so clearing the log resets them.

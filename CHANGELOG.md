@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 Patch versions 0.2.1–0.2.18 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here until the next release is cut.
 
+### Verified
+- The owner ran the extension by hand on live Facebook and confirmed it works. This was a manual check; individual items below marked "unverified" were not itemized in that check.
+
 ### Added
 - Posts held for admin approval are logged as `pending` ("Chờ duyệt") instead of a success. Detection is unverified on live Facebook.
 - One automatic retry, 8 s later, for post campaigns when a failure happened before anything was submitted. Failures that may have been submitted, and all comment failures, are never retried.
