@@ -12,13 +12,26 @@ import {
   findCommentTextbox,
   findCommentButton,
   countCommentEditors,
+  countComposerImages,
+  findImageInput,
+  findLinkPreviewCloseButton,
+  findPhotoButton,
+  hasLineBreaks,
+  insertLines,
+  isDuplicatedText,
+  keptLineBreaks,
+  pasteText,
+  isComposerBusy,
+  setInputFiles,
   countVisibleCommentText,
   isComposerSubmitted,
   isEnabled,
   readGroupName,
   waitFor,
 } from '@/lib/fb-dom';
-import { isGroupNameRequest, isPostRequest, type GroupNameReply, type DiscoverReply } from '@/lib/messages';
+import { dataUrlToBytes } from '@/lib/images';
+import { LIMITS } from '@/lib/limits';
+import { isGroupNameRequest, isPostRequest, type GroupNameReply, type DiscoverReply, type PostRequest } from '@/lib/messages';
 import type { PostOutcome } from '@/lib/types';
 
 export default defineContentScript({
@@ -39,7 +52,7 @@ export default defineContentScript({
         return true;
       }
       if (!isPostRequest(message)) return false;
-      submitPost(message.text).then(sendResponse, (e: unknown) =>
+      submitPost(message).then(sendResponse, (e: unknown) =>
         sendResponse({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }),
       );
       return true;
@@ -105,8 +118,41 @@ async function submitComment(text: string): Promise<PostOutcome> {
   return confirmed ? { kind: 'posted' } : { kind: 'failed', reason: 'Đã gửi thao tác bình luận nhưng chưa thấy bình luận mới trên trang; hãy kiểm tra trước khi thử lại.' };
 }
 
+/**
+ * Adds the campaign images through the composer's own file input.
+ * A post with chosen images is never sent without them.
+ */
+async function attachImages(images: NonNullable<PostRequest['images']>): Promise<PostOutcome | null> {
+  const files: File[] = [];
+  for (const image of images) {
+    const bytes = dataUrlToBytes(image.dataUrl);
+    if (!bytes) return { kind: 'failed', reason: 'Dữ liệu ảnh không hợp lệ, bài chưa được đăng.' };
+    files.push(new File([bytes as BlobPart], image.name, { type: image.mime }));
+  }
+  let input = findImageInput(document);
+  if (!input) {
+    findPhotoButton(document)?.click();
+    input = await waitFor(() => findImageInput(document), 5_000);
+  }
+  if (!input) return { kind: 'failed', reason: 'Không tìm thấy ô nhận ảnh trong hộp soạn thảo, bài chưa được đăng.', retryable: true };
+  const before = countComposerImages(document);
+  if (!setInputFiles(input, files)) return { kind: 'failed', reason: 'Không đính được ảnh vào bài, bài chưa được đăng.', retryable: true };
+  const ready = await waitFor(() => countComposerImages(document) - before >= files.length && !isComposerBusy(document), LIMITS.imageUploadTimeoutMs, 500);
+  if (!ready) return { kind: 'failed', reason: 'Ảnh chưa tải xong trong hộp soạn thảo, bài chưa được đăng.', retryable: true };
+  return null;
+}
+
+/** Waits once for the preview card and closes it. No card is not an error. */
+async function closeLinkPreview(): Promise<void> {
+  const button = await waitFor(() => findLinkPreviewCloseButton(document), LIMITS.linkPreviewWaitMs, 500);
+  if (!button) return;
+  button.click();
+  await waitFor(() => !findLinkPreviewCloseButton(document), 3_000, 250);
+}
+
 /** Drives the visible composer exactly like a person would: open, type, press Post. */
-async function submitPost(text: string): Promise<PostOutcome> {
+async function submitPost(request: PostRequest): Promise<PostOutcome> {
+  const { text } = request;
   if (!text.trim()) return { kind: 'failed', reason: 'Bài đăng đang trống.' };
 
   const early = detectPageProblem(document, location.pathname);
@@ -128,9 +174,28 @@ async function submitPost(text: string): Promise<PostOutcome> {
   if (!textbox) return { kind: 'failed', reason: 'Hộp thoại đăng bài không mở.', retryable: true };
   textbox.focus();
   await pause(400);
-  document.execCommand('insertText', false, text);
-  await pause(600);
+  // Multi-line text is pasted as plain text: typing "Enter" is ignored by Facebook's editor, and an earlier
+  // type-then-clear fallback left both copies in the box. Only when the paste did nothing (box still
+  // empty) is the text typed line by line. The box is never cleared and filled again.
+  if (hasLineBreaks(text)) {
+    pasteText(textbox, text);
+    await pause(600);
+  }
+  if (!(textbox.textContent ?? '').trim()) {
+    insertLines((command, value) => document.execCommand(command, false, value), text);
+    await pause(600);
+  }
   if (!(textbox.textContent ?? '').trim()) return { kind: 'failed', reason: 'Không nhập được nội dung vào ô đăng bài.', retryable: true };
+  // Nothing has been submitted yet, so both failures below are safe to retry in a fresh composer.
+  if (isDuplicatedText(textbox.textContent ?? '', text)) return { kind: 'failed', reason: 'Nội dung trong ô đăng bài bị lặp, bài chưa được đăng.', retryable: true };
+  if (!keptLineBreaks(textbox, text)) return { kind: 'failed', reason: 'Facebook không giữ được xuống dòng trong bài, bài chưa được đăng.', retryable: true };
+
+  // Nothing has been submitted before Post is clicked, so failures up to there are safe to retry.
+  if (request.images?.length) {
+    const failure = await attachImages(request.images);
+    if (failure) return failure;
+  }
+  if (request.removeLinkPreview) await closeLinkPreview();
 
   const button = await waitFor(() => {
     const b = findPostButton(document);

@@ -1,6 +1,8 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { validateImages, totalImageBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
+import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest } from '@/lib/messages';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
@@ -105,7 +107,7 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
   const campaign = (await campaignsItem.getValue()).find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-  const problem = validateCampaign(campaign);
+  const problem = validateCampaign(campaign, await campaignsItem.getValue());
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
   await runItem.setValue(state);
@@ -139,7 +141,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       if (run.status !== 'stopped') return { ok: false, error: 'Chỉ chạy tiếp được lượt đã dừng.' };
       const campaign = await currentCampaign(run);
       if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-      const problem = validateCampaign(campaign);
+      const problem = validateCampaign(campaign, await campaignsItem.getValue());
       if (problem) return { ok: false, error: problem };
       const next = continueRun(run, campaign, await logsItem.getValue(), Date.now());
       await runItem.setValue(next);
@@ -169,12 +171,16 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
   }
 }
 
-function validateCampaign(c: Campaign): string | null {
+function validateCampaign(c: Campaign, all: Campaign[]): string | null {
   if (c.groupIds.length === 0) return 'Hãy chọn ít nhất một nhóm.';
   if (c.groupIds.length > LIMITS.maxGroupsPerCampaign) return `Mỗi chiến dịch tối đa ${LIMITS.maxGroupsPerCampaign} nhóm.`;
   if (c.mode === 'comment' && (!Number.isInteger(c.commentsPerGroup) || (c.commentsPerGroup ?? 0) < 1 || (c.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) return 'Số bài mỗi nhóm không hợp lệ.';
   if (!c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
   if (c.variations.some((v) => v.length > LIMITS.maxPostLength)) return 'Bài đăng quá dài.';
+  if (c.mode !== 'comment' && c.images?.length) {
+    const otherBytes = all.filter((o) => o.id !== c.id).reduce((sum, o) => sum + totalImageBytes(o.images ?? []), 0);
+    return validateImages(c.images, otherBytes);
+  }
   return null;
 }
 
@@ -201,7 +207,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run) : await postToGroup(group, text)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run) : await postToGroup(group, text, campaign)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -295,7 +301,7 @@ async function fetchGroupNames(): Promise<void> {
   }
 }
 
-async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
+async function postToGroup(group: Group, template: string, campaign: Campaign): Promise<PostOutcome> {
   let tabId: number | undefined;
   // Until the page has loaded nothing can have been submitted, so a failure up to that point is safe to retry.
   let loaded = false;
@@ -309,7 +315,16 @@ async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
       const found = await askGroupName(tabId);
       if (found.name) await saveGroupName(group.id, found.name);
     }
-    const request: PostRequest = { type: 'cap/post', text };
+    // The only place where {group} is replaced: with the stored name, which may have just been read above.
+    const stored = (await groupsItem.getValue()).find((g) => g.id === group.id) ?? group;
+    const rendered = renderPost(template, hasPlaceholderName(stored) ? null : stored.name);
+    if (!rendered.ok) return { kind: 'failed', reason: rendered.reason };
+    const request: PostRequest = {
+      type: 'cap/post',
+      text: rendered.text,
+      ...(campaign.images?.length ? { images: campaign.images.map(({ name, mime, dataUrl }) => ({ name, mime, dataUrl })) } : {}),
+      ...(campaign.removeLinkPreview ? { removeLinkPreview: true } : {}),
+    };
     const reply = (await withTimeout(
       sendWithRetry(tabId, request),
       LIMITS.postTimeoutMs,

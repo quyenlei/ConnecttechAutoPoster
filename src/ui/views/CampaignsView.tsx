@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { delayWarning, formatDuration, recommendDelay } from '@/lib/delay';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
+import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
 import { DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
 import { isActive } from '@/lib/run-engine';
 import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/schedule';
+import { hasUnknownPlaceholder } from '@/lib/template';
 import { campaignsItem, groupsItem, runItem } from '@/lib/storage';
 import type { Campaign } from '@/lib/types';
 import { sendCommand, useItem } from '../hooks';
+import { prepareImage } from '../image-file';
 
 const blank = (): Campaign => ({
   id: newId(),
@@ -29,6 +32,8 @@ function suggestTime(times: string[]): string {
   const mins = last === null ? 7 * 60 : (last + 12 * 60) % (24 * 60);
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 }
+
+const formatBytes = (bytes: number) => (bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`);
 
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
@@ -67,6 +72,9 @@ export function CampaignsView() {
   const scheduleError = validateTimes(scheduleTimes);
   const scheduleBlocking = schedule.enabled ? scheduleError : null;
   const nextRun = schedule.enabled && !scheduleError ? nextOccurrence(scheduleTimes, Date.now()) : null;
+  const isPost = draft ? draft.mode !== 'comment' : true;
+  const images = draft?.images ?? [];
+  const otherImageBytes = draft ? campaigns.filter((c) => c.id !== draft.id).reduce((sum, c) => sum + totalImageBytes(c.images ?? []), 0) : 0;
   const variationCount = draft ? draft.variations.filter((v) => v.trim()).length : 0;
 
   function select(next: Campaign) {
@@ -85,6 +93,41 @@ export function CampaignsView() {
     setMessage(null);
   }
 
+  function insertGroup(index: number) {
+    if (!draft) return;
+    const current = draft.variations[index] ?? '';
+    const field = document.getElementById(`c-var-${index}`);
+    const at = field instanceof HTMLTextAreaElement ? field.selectionStart : current.length;
+    const next = `${current.slice(0, at)}{group}${current.slice(at)}`;
+    if (next.length > LIMITS.maxPostLength) return;
+    patch({ variations: draft.variations.map((x, j) => (j === index ? next : x)) });
+  }
+
+  async function addImages(files: File[]) {
+    if (!draft || files.length === 0) return;
+    const errors: string[] = [];
+    let next = [...images];
+    for (const file of files) {
+      if (next.length >= LIMITS.maxImagesPerCampaign) {
+        errors.push(`Mỗi chiến dịch tối đa ${LIMITS.maxImagesPerCampaign} ảnh.`);
+        break;
+      }
+      const result = await prepareImage(file);
+      if (!result.ok) {
+        errors.push(result.error);
+        continue;
+      }
+      const problem = validateImages([...next, result.image], otherImageBytes);
+      if (problem) {
+        errors.push(problem);
+        continue;
+      }
+      next = [...next, result.image];
+    }
+    setDraft((d) => (d ? { ...d, images: next } : d));
+    setMessage(errors.length > 0 ? { text: errors.join(' '), danger: true } : null);
+  }
+
   async function save(): Promise<Campaign | null> {
     if (!draft) return null;
     if (busy && run?.campaignId === draft.id) {
@@ -99,8 +142,17 @@ export function CampaignsView() {
       setMessage({ text: scheduleBlocking, danger: true });
       return null;
     }
+    const imageProblem = isPost ? validateImages(images, otherImageBytes) : null;
+    if (imageProblem) {
+      setMessage({ text: imageProblem, danger: true });
+      return null;
+    }
+    const { images: _images, removeLinkPreview: _preview, ...base } = draft;
     const clean: Campaign = {
-      ...draft,
+      ...base,
+      // Images and the link preview option only apply to post campaigns.
+      ...(isPost && images.length > 0 ? { images } : {}),
+      ...(isPost && draft.removeLinkPreview ? { removeLinkPreview: true } : {}),
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
       variations: draft.variations.filter((v) => v.trim()).length ? draft.variations.filter((v) => v.trim()) : [''],
       delay: {
@@ -193,6 +245,15 @@ export function CampaignsView() {
                     value={v}
                     onChange={(e) => patch({ variations: draft.variations.map((x, j) => (j === i ? e.target.value : x)) })}
                   />
+                  {isPost && (
+                    <>
+                      <span className="field__hint">
+                        Dùng {'{group}'} để chèn tên nhóm.{' '}
+                        <button className="button button--small" type="button" aria-label={`Chèn {group} vào phiên bản ${i + 1}`} onClick={() => insertGroup(i)}>Chèn {'{group}'}</button>
+                      </span>
+                      {hasUnknownPlaceholder(v) && <span className="notice">Có mẫu {'{...}'} không được hỗ trợ. Chỉ {'{group}'} được thay thế, các mẫu khác sẽ được đăng nguyên văn.</span>}
+                    </>
+                  )}
                   {draft.variations.length > 1 && (
                     <div>
                       <button className="button button--small" type="button" onClick={() => patch({ variations: draft.variations.filter((_, j) => j !== i) })}>
@@ -209,6 +270,49 @@ export function CampaignsView() {
                 <span className="field__hint"> Các phiên bản được sử dụng luân phiên.</span>
               </div>
             </div>
+
+            {isPost && (
+              <div className="campaigns__section">
+                <h3>Ảnh đính kèm</h3>
+                <div className="field">
+                  <label className="field__label" htmlFor="c-images">Chọn ảnh từ máy (tối đa {LIMITS.maxImagesPerCampaign} ảnh)</label>
+                  <input
+                    id="c-images"
+                    className="field__control"
+                    type="file"
+                    multiple
+                    accept={ALLOWED_IMAGE_TYPES.join(',')}
+                    disabled={images.length >= LIMITS.maxImagesPerCampaign}
+                    onChange={(e) => {
+                      // Copy first: clearing the input empties the live FileList.
+                      const picked = Array.from(e.target.files ?? []);
+                      e.target.value = '';
+                      void addImages(picked);
+                    }}
+                  />
+                  <span className="field__hint">
+                    JPG, PNG hoặc WebP. Ảnh lớn được thu nhỏ trên máy bạn (tối đa {LIMITS.maxImageBytes / 1_000_000} MB mỗi ảnh, {LIMITS.maxTotalImageBytes / 1_000_000} MB cho mọi chiến dịch). Ảnh chỉ lưu trong trình duyệt này.
+                  </span>
+                </div>
+                {images.length > 0 && (
+                  <ul className="campaigns__images">
+                    {images.map((image) => (
+                      <li className="campaigns__images-item" key={image.id}>
+                        <img className="campaigns__images-thumb" src={image.dataUrl} width={64} height={64} alt={`Ảnh xem trước: ${image.name}`} />
+                        <span className="campaigns__images-name">{image.name} ({formatBytes(image.bytes)})</span>
+                        <button className="button button--small" type="button" aria-label={`Xóa ảnh ${image.name}`} onClick={() => patch({ images: images.filter((x) => x.id !== image.id) })}>Xóa ảnh</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <label className="campaigns__group">
+                  <input type="checkbox" checked={draft.removeLinkPreview === true} onChange={(e) => patch({ removeLinkPreview: e.target.checked })} />
+                  Bỏ xem trước link khi đăng
+                </label>
+                <span className="field__hint">Facebook có thể không hiện thẻ xem trước ở mọi nhóm. Nếu không thấy thẻ, bài vẫn được đăng bình thường.</span>
+              </div>
+            )}
 
             <div className="campaigns__section">
               <h3>Nhóm (đã chọn {draft.groupIds.length})</h3>
