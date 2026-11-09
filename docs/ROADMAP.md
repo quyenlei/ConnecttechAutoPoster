@@ -24,7 +24,7 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 - [ ] Post templates with placeholders such as `{group}`.
 
 ## v0.4 data
-- [ ] Backup and restore (JSON export/import with preview; never includes Facebook data).
+- [x] Backup and restore (JSON export/import with preview; never includes Facebook data). Tested with unit tests and the local mock only.
 - [ ] Group tags/folders and saved group lists.
 - [x] Scheduled campaigns: fixed daily times (v0.2.0). Weekday or one-off dates are not planned yet.
 

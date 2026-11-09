@@ -191,5 +191,32 @@ with sync_playwright() as p:
     assert pg.locator('.overview__stat-value').first.inner_text() != '0', "today's sent count should not be 0"
     pg.check("label:has-text('Thông báo trên máy') input")
     assert not errors
+    # Backup: export, wipe the local data, import the file, and check the counts. Schedules come back switched off.
+    keys = "['groups','campaigns','logs']"
+    before = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
+    assert before['scheduled'] >= 1, before
+    pg.click("button:text-is('Sao lưu')")
+    with pg.expect_download() as download:
+        pg.click("button:text-is('Xuất bản sao lưu')")
+    backup_path = f"{tmp}/backup.json"
+    download.value.save_as(backup_path)
+    assert download.value.suggested_filename.startswith('cap-backup-'), download.value.suggested_filename
+    pg.evaluate("chrome.storage.local.clear()")
+    pg.reload(); pg.click("button:text-is('Sao lưu')")
+    pg.set_input_files('#backup-file', backup_path)
+    pg.wait_for_selector("text=Xem trước:")
+    assert "Lịch sẽ được tắt khi nhập" in pg.locator('.backup__preview').inner_text()
+    pg.click("button:text-is('Nhập dữ liệu')")
+    pg.wait_for_selector("text=Đã nhập")
+    after = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
+    assert after['groups'] == before['groups'] and after['campaigns'] == before['campaigns'], (before, after)
+    assert after['logs'] >= before['logs'] and after['scheduled'] == 0, (before, after)
+    # Importing the same file again adds nothing.
+    pg.reload(); pg.click("button:text-is('Sao lưu')")
+    pg.set_input_files('#backup-file', backup_path)
+    pg.wait_for_selector("text=Xem trước:")
+    pg.click("button:text-is('Nhập dữ liệu')")
+    pg.wait_for_selector("text=Đã nhập 0 nhóm, 0 chiến dịch, 0 dòng nhật ký")
+    assert not errors
     print("SMOKE OK")
     ctx.close()

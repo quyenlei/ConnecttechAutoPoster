@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { RunBar } from './RunBar';
 import { ActivityView } from './views/ActivityView';
+import { BackupView } from './views/BackupView';
 import { CampaignsView } from './views/CampaignsView';
 import { GroupsView } from './views/GroupsView';
 import { OverviewView } from './views/OverviewView';
@@ -11,6 +12,7 @@ const TABS = [
   { id: 'groups', label: 'Nhóm' },
   { id: 'overview', label: 'Tổng quan' },
   { id: 'activity', label: 'Nhật ký' },
+  { id: 'backup', label: 'Sao lưu' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -64,6 +66,7 @@ export function App() {
           {tab === 'groups' && <GroupsView />}
           {tab === 'overview' && <OverviewView />}
           {tab === 'activity' && <ActivityView />}
+          {tab === 'backup' && <BackupView />}
         </div>
       </main>
     </>
