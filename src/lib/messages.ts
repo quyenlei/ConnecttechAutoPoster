@@ -1,9 +1,19 @@
 import type { PostOutcome } from './types';
 
 /** Background -> content script (group page). */
+export interface PostImage {
+  name: string;
+  mime: string;
+  dataUrl: string;
+}
+
 export interface PostRequest {
   type: 'cap/post';
+  /** Final text: placeholders are already replaced by the background. */
   text: string;
+  /** Sent with the post request only, read from the campaign at that moment. */
+  images?: PostImage[];
+  removeLinkPreview?: boolean;
 }
 
 export interface DiscoverRequest {

@@ -26,6 +26,21 @@ export const LIMITS = {
   minScheduleGapMinutes: 360,
   /** A scheduled start later than this is skipped, never run late. */
   scheduleGraceMinutes: 10,
+  /**
+   * Post images are stored as data URLs in chrome.storage.local (10 MiB quota in current Chrome).
+   * 4 MB of image bytes is about 5.4 MB once base64-encoded, which leaves room for everything else.
+   */
+  maxImagesPerCampaign: 4,
+  /** Per image, after the UI has shrunk it. */
+  maxImageBytes: 1_000_000,
+  /** Over all campaigns together. */
+  maxTotalImageBytes: 4_000_000,
+  /** Longest side in pixels after shrinking. */
+  maxImageEdgePx: 1600,
+  /** Wait once for Facebook's link preview card to show up before closing it. */
+  linkPreviewWaitMs: 4_000,
+  /** Wait for attached images to finish uploading in the composer. */
+  imageUploadTimeoutMs: 30_000,
 } as const;
 
 export const DEFAULT_SAFETY_BREAK = { enabled: true, everyPosts: 10, breakMinutes: 15 } as const;

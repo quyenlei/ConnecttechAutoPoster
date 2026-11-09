@@ -17,6 +17,10 @@ export const HINTS = {
     'tạo bài viết',
   ],
   post: ['post', 'đăng'],
+  /** Button in the composer that adds photos. Unverified on live Facebook. */
+  photo: ['photo/video', 'ảnh/video', 'photo', 'ảnh'],
+  /** Close button of the link preview card in the composer. Unverified on live Facebook. */
+  removePreview: ['remove preview', 'xóa bản xem trước', 'gỡ bản xem trước', 'xóa xem trước'],
   join: ['join group', 'tham gia nhóm', 'tham gia'],
   blocked: [
     "you're temporarily blocked",
@@ -94,6 +98,92 @@ export function findPostButton(doc: Document): HTMLElement | null {
     if (button) return button;
   }
   return null;
+}
+
+/** File input of the composer dialog that takes images. Null when the composer does not show one. */
+export function findImageInput(doc: Document): HTMLInputElement | null {
+  for (const input of doc.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="file"]')) {
+    if (/image\/|\.(jpe?g|png|webp)/i.test(input.getAttribute('accept') ?? '')) return input;
+  }
+  return null;
+}
+
+/** Button in the composer dialog that reveals the photo picker. */
+export function findPhotoButton(doc: Document): HTMLElement | null {
+  for (const dialog of doc.querySelectorAll('[role="dialog"]')) {
+    const button = findByText(dialog, '[role="button"]', HINTS.photo);
+    if (button) return button;
+  }
+  return null;
+}
+
+/** Close button of the link preview card inside the composer. Null when no card is shown. */
+export function findLinkPreviewCloseButton(doc: Document): HTMLElement | null {
+  for (const dialog of doc.querySelectorAll('[role="dialog"]')) {
+    const button = findByText(dialog, '[role="button"]', HINTS.removePreview);
+    if (button) return button;
+  }
+  return null;
+}
+
+/** Local image previews in the composer. Compare with the count before attaching. */
+export function countComposerImages(doc: Document): number {
+  return doc.querySelectorAll('[role="dialog"] img[src^="blob:"], [role="dialog"] img[src^="data:"]').length;
+}
+
+/** True while the composer still shows an upload in progress. */
+export function isComposerBusy(doc: Document): boolean {
+  return doc.querySelector('[role="dialog"] [role="progressbar"], [role="dialog"] [aria-busy="true"]') !== null;
+}
+
+/**
+ * Types text the way a person does: each line, then Enter (a new paragraph) between lines.
+ * One `insertText` call with "\n" inside lost every line break on Facebook's editor.
+ * `exec` is `document.execCommand`, passed in so this stays testable.
+ */
+export function insertLines(exec: (command: string, value?: string) => boolean, text: string): void {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  lines.forEach((line, index) => {
+    if (index > 0) exec('insertParagraph');
+    if (line) exec('insertText', line);
+  });
+}
+
+/** Fallback: hands the text to the editor as a paste of plain text. */
+export function pasteText(target: HTMLElement, text: string): void {
+  const data = new DataTransfer();
+  data.setData('text/plain', text);
+  target.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+}
+
+/** False when the text had line breaks but the editor shows none, so the post would be one block. */
+export function keptLineBreaks(textbox: HTMLElement, text: string): boolean {
+  if (!hasLineBreaks(text)) return true;
+  return /\n/.test((textbox.innerText ?? textbox.textContent ?? '').trim());
+}
+
+/** True when the text has a line break between visible lines (a leading or trailing one does not count). */
+export const hasLineBreaks = (text: string): boolean => /\n/.test(text.replace(/\r\n?/g, '\n').trim());
+
+/**
+ * True when the editor holds the text about twice. Whitespace is ignored because Facebook
+ * renders line breaks its own way. Very short texts are not checked.
+ */
+export function isDuplicatedText(actual: string, expected: string): boolean {
+  const squash = (value: string) => value.replace(/\s+/g, '');
+  const want = squash(expected);
+  return want.length >= 20 && squash(actual).length >= want.length * 1.8;
+}
+
+/** Gives a file input its files the way a drop or picker would, using standard browser APIs only. */
+export function setInputFiles(input: HTMLInputElement, files: readonly File[]): boolean {
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+  if (input.files?.length !== files.length) return false;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 }
 
 /**

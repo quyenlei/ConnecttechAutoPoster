@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKUP_APP, BACKUP_FORMAT_VERSION, buildBackup, MAX_BACKUP_BYTES, parseBackup, planImport, type BackupData } from '../src/lib/backup';
 import { LIMITS } from '../src/lib/limits';
-import type { Campaign, Group, LogEntry } from '../src/lib/types';
+import type { Campaign, CampaignImage, Group, LogEntry } from '../src/lib/types';
 
 const NOW = 1_731_120_000_000;
 const group = (slug: string, name = slug): Group => ({ id: slug, name, url: `https://www.facebook.com/groups/${slug}/` });
@@ -48,7 +48,7 @@ describe('parseBackup: file level', () => {
     const data = sample();
     const result = parseOk(buildBackup(data, '0.2.18', NOW));
     expect(result.backup.data).toEqual(data);
-    expect(result.dropped).toEqual({ groups: 0, campaigns: 0, logs: 0 });
+    expect(result.dropped).toEqual({ groups: 0, campaigns: 0, logs: 0, images: 0 });
   });
 
   it('rejects broken JSON', () => {
@@ -73,10 +73,10 @@ describe('parseBackup: file level', () => {
     expect(parseBackup(JSON.stringify({ ...wrap({}), data: null })).ok).toBe(false);
   });
 
-  it('rejects a file over 5 MB', () => {
+  it('rejects a file over 8 MB', () => {
     const result = parseBackup(' '.repeat(MAX_BACKUP_BYTES + 1));
     expect(result).toMatchObject({ ok: false });
-    if (!result.ok) expect(result.error).toMatch(/5 MB/);
+    if (!result.ok) expect(result.error).toMatch(/8 MB/);
   });
 
   it('treats missing lists as empty', () => {
@@ -314,5 +314,112 @@ describe('planImport', () => {
     const snapshot = JSON.stringify(current);
     planImport(current, backupOf(sample()));
     expect(JSON.stringify(current)).toBe(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------- v0.5 content fields
+
+const b64 = (n: number) => Buffer.alloc(n, 1).toString('base64');
+const img = (id: string, size = 100, over: Partial<CampaignImage> = {}): CampaignImage => ({
+  id,
+  name: `${id}.png`,
+  mime: 'image/png',
+  dataUrl: `data:image/png;base64,${b64(size)}`,
+  bytes: size,
+  ...over,
+});
+const roundTrip = (data: BackupData) => parseOk(JSON.parse(JSON.stringify(buildBackup(data, '0.5.0', NOW))));
+
+describe('backup: {group} placeholder', () => {
+  it('keeps placeholders exactly as typed through export and import', () => {
+    const text = 'Xin chào {group}! { Group } {foo}';
+    const data: BackupData = { ...empty(), groups: [group('alpha')], campaigns: [campaign({ variations: [text, 'B {group}'] })] };
+    const result = roundTrip(data);
+    expect(result.backup.data.campaigns[0]?.variations).toEqual([text, 'B {group}']);
+    const plan = planImport(empty(), result.backup);
+    expect(plan.merged.campaigns[0]?.variations[0]).toBe(text);
+  });
+});
+
+describe('backup: link preview option', () => {
+  it('keeps removeLinkPreview when on and leaves it out otherwise', () => {
+    const on = roundTrip({ ...empty(), campaigns: [campaign({ removeLinkPreview: true })] });
+    expect(on.backup.data.campaigns[0]?.removeLinkPreview).toBe(true);
+    const off = roundTrip({ ...empty(), campaigns: [campaign({ removeLinkPreview: false }), campaign({ id: 'c2' })] });
+    expect(off.backup.data.campaigns.every((c) => c.removeLinkPreview === undefined)).toBe(true);
+  });
+  it('treats non-boolean values as off', () => {
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), removeLinkPreview: 'yes' }] }));
+    expect(result.backup.data.campaigns[0]?.removeLinkPreview).toBeUndefined();
+  });
+  it('is not applied to comment campaigns', () => {
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), mode: 'comment', commentsPerGroup: 2, removeLinkPreview: true }] }));
+    expect(result.backup.data.campaigns[0]?.removeLinkPreview).toBeUndefined();
+  });
+});
+
+describe('backup: images', () => {
+  it('exports images with the campaign and imports them back unchanged', () => {
+    const images = [img('a'), img('b', 50)];
+    const result = roundTrip({ ...empty(), groups: [group('alpha')], campaigns: [campaign({ images })] });
+    expect(result.backup.data.campaigns[0]?.images).toEqual(images);
+    expect(result.dropped.images).toBe(0);
+  });
+  it('leaves old campaigns without images unchanged', () => {
+    const result = roundTrip({ ...empty(), campaigns: [campaign()] });
+    expect(result.backup.data.campaigns[0]).not.toHaveProperty('images');
+  });
+  it('drops invalid images and counts them', () => {
+    const bad = [
+      img('type', 10, { mime: 'image/gif' as never, dataUrl: `data:image/gif;base64,${b64(10)}` }),
+      img('url', 10, { dataUrl: 'https://example.com/x.png' }),
+      img('big', LIMITS.maxImageBytes + 1),
+      img('ok'),
+    ];
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), images: bad }] }));
+    expect(result.backup.data.campaigns[0]?.images?.map((i) => i.id)).toEqual(['ok']);
+    expect(result.dropped.images).toBe(3);
+  });
+  it('recomputes the size instead of trusting the file', () => {
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), images: [img('a', 100, { bytes: 1 })] }] }));
+    expect(result.backup.data.campaigns[0]?.images?.[0]?.bytes).toBe(100);
+  });
+  it('keeps at most the per-campaign image count', () => {
+    const many = Array.from({ length: LIMITS.maxImagesPerCampaign + 2 }, (_, i) => img(`i${i}`));
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), images: many }] }));
+    expect(result.backup.data.campaigns[0]?.images).toHaveLength(LIMITS.maxImagesPerCampaign);
+    expect(result.dropped.images).toBe(2);
+  });
+  it('ignores images on comment campaigns', () => {
+    const result = parseOk(wrap({ campaigns: [{ ...campaign(), mode: 'comment', commentsPerGroup: 2, images: [img('a')] }] }));
+    expect(result.backup.data.campaigns[0]).not.toHaveProperty('images');
+    expect(result.dropped.images).toBe(1);
+  });
+  it('enforces the total across campaigns when merging', () => {
+    const big = LIMITS.maxImageBytes;
+    const current: BackupData = { ...empty(), groups: [group('alpha')], campaigns: [campaign({ id: 'old', images: [img('o1', big), img('o2', big), img('o3', big)] })] };
+    const incoming = roundTrip({ ...empty(), groups: [group('alpha')], campaigns: [campaign({ id: 'new', images: [img('n1', big), img('n2', big)] })] });
+    const plan = planImport(current, incoming.backup);
+    const added = plan.merged.campaigns.find((c) => c.id === 'new');
+    expect(added?.images?.map((i) => i.id)).toEqual(['n1']);
+    expect(plan.preview.imagesDropped).toBe(1);
+  });
+  it('accepts images up to exactly the total limit', () => {
+    const big = LIMITS.maxImageBytes;
+    const incoming = roundTrip({ ...empty(), groups: [group('alpha')], campaigns: [campaign({ images: Array.from({ length: 4 }, (_, i) => img(`i${i}`, big)) })] });
+    const plan = planImport(empty(), incoming.backup);
+    expect(plan.merged.campaigns[0]?.images).toHaveLength(4);
+    expect(plan.preview.imagesDropped).toBe(0);
+  });
+  it('keeps the image data of the existing campaign when the id matches', () => {
+    const current: BackupData = { ...empty(), campaigns: [campaign({ images: [img('keep')] })] };
+    const incoming = roundTrip({ ...empty(), campaigns: [campaign({ images: [img('other')] })] });
+    expect(planImport(current, incoming.backup).merged.campaigns[0]?.images?.[0]?.id).toBe('keep');
+  });
+  it('fits a full set of images inside the file size limit', () => {
+    const images = Array.from({ length: 4 }, (_, i) => img(`i${i}`, LIMITS.maxImageBytes));
+    const json = JSON.stringify(buildBackup({ ...empty(), campaigns: [campaign({ images })] }, '0.5.0', NOW), null, 2);
+    expect(new TextEncoder().encode(json).length).toBeLessThan(MAX_BACKUP_BYTES);
+    expect(parseBackup(json).ok).toBe(true);
   });
 });

@@ -24,6 +24,16 @@ export interface CampaignSchedule {
   times: string[];
 }
 
+/** An image attached to a post campaign, stored locally as a data URL. */
+export interface CampaignImage {
+  id: string;
+  name: string;
+  mime: 'image/jpeg' | 'image/png' | 'image/webp';
+  dataUrl: string;
+  /** Decoded size in bytes. */
+  bytes: number;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -36,6 +46,10 @@ export interface Campaign {
   delay: DelayRange;
   safetyBreak: SafetyBreak;
   schedule?: CampaignSchedule;
+  /** Post campaigns only. Older campaigns have none. */
+  images?: CampaignImage[];
+  /** Post campaigns only. Close Facebook's link preview card before posting. Off when missing. */
+  removeLinkPreview?: boolean;
   createdAt: number;
 }
 

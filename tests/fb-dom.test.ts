@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findCommentTextbox, findCommentButton, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findCommentTextbox, findCommentButton, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -200,4 +200,139 @@ it('detects a pending-approval notice in English and Vietnamese', () => {
   expect(detectPendingApproval(document)).toBe(false);
   document.body.textContent = 'Pending posts';
   expect(detectPendingApproval(document)).toBe(false);
+});
+
+describe('fb-dom: image attachments', () => {
+  it('finds an image file input inside the composer dialog', () => {
+    document.body.innerHTML = '<input type="file" accept="image/*"><div role="dialog"><input id="in" type="file" accept="image/*,video/*"></div>';
+    expect(findImageInput(document)?.id).toBe('in');
+  });
+  it('ignores inputs that do not accept images and inputs outside a dialog', () => {
+    document.body.innerHTML = '<div role="dialog"><input type="file" accept="video/*"><input type="file" accept=".pdf"></div><input type="file" accept="image/*">';
+    expect(findImageInput(document)).toBeNull();
+  });
+  it('accepts a file input with no accept filter only when it is not clearly for another type', () => {
+    document.body.innerHTML = '<div role="dialog"><input id="any" type="file"></div>';
+    expect(findImageInput(document)).toBeNull();
+  });
+  it('finds the photo button in English and Vietnamese, only in a dialog', () => {
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Photo/video">x</div></div>';
+    expect(findPhotoButton(document)).not.toBeNull();
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Ảnh/video"></div></div>';
+    expect(findPhotoButton(document)).not.toBeNull();
+    document.body.innerHTML = '<div role="button" aria-label="Photo/video"></div>';
+    expect(findPhotoButton(document)).toBeNull();
+  });
+  it('sets files on an input and fires input and change events', () => {
+    document.body.innerHTML = '<div role="dialog"><input id="in" type="file" accept="image/*" multiple></div>';
+    const input = document.getElementById('in') as HTMLInputElement;
+    const seen: string[] = [];
+    input.addEventListener('input', () => seen.push('input'));
+    input.addEventListener('change', () => seen.push('change'));
+    const files = [new File([new Uint8Array([1])], 'a.png', { type: 'image/png' }), new File([new Uint8Array([2])], 'b.jpg', { type: 'image/jpeg' })];
+    expect(setInputFiles(input, files)).toBe(true);
+    expect(input.files?.length).toBe(2);
+    expect(seen).toEqual(['input', 'change']);
+  });
+  it('counts local image previews inside the dialog only', () => {
+    document.body.innerHTML = '<img src="blob:https://www.facebook.com/1"><div role="dialog"><img src="blob:https://www.facebook.com/2"><img src="data:image/png;base64,AAAA"><img src="https://example.com/x.png"></div>';
+    expect(countComposerImages(document)).toBe(2);
+  });
+  it('reports the composer as busy while an upload progress bar is shown', () => {
+    document.body.innerHTML = '<div role="dialog"><div role="progressbar"></div></div>';
+    expect(isComposerBusy(document)).toBe(true);
+    document.body.innerHTML = '<div role="dialog"><div aria-busy="true"></div></div>';
+    expect(isComposerBusy(document)).toBe(true);
+    document.body.innerHTML = '<div role="dialog"><div role="textbox"></div></div>';
+    expect(isComposerBusy(document)).toBe(false);
+    document.body.innerHTML = '<div role="progressbar"></div>';
+    expect(isComposerBusy(document)).toBe(false);
+  });
+});
+
+describe('fb-dom: link preview card', () => {
+  it('finds the close button of the preview in English and Vietnamese', () => {
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Remove preview"></div></div>';
+    expect(findLinkPreviewCloseButton(document)).not.toBeNull();
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Xóa bản xem trước"></div></div>';
+    expect(findLinkPreviewCloseButton(document)).not.toBeNull();
+    document.body.innerHTML = `<div role="dialog"><div role="button" aria-label="${'Xóa bản xem trước'.normalize('NFD')}"></div></div>`;
+    expect(findLinkPreviewCloseButton(document)).not.toBeNull();
+  });
+  it('returns null when there is no preview card', () => {
+    document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Đóng"></div><div role="button" aria-label="Đăng">Đăng</div></div>';
+    expect(findLinkPreviewCloseButton(document)).toBeNull();
+    document.body.innerHTML = '';
+    expect(findLinkPreviewCloseButton(document)).toBeNull();
+  });
+  it('does not look outside dialogs', () => {
+    document.body.innerHTML = '<div role="button" aria-label="Remove preview"></div>';
+    expect(findLinkPreviewCloseButton(document)).toBeNull();
+  });
+});
+
+describe('fb-dom: multi-line text', () => {
+  const record = () => {
+    const calls: string[] = [];
+    const exec = (command: string, value?: string): boolean => {
+      calls.push(value === undefined ? command : `${command}:${value}`);
+      return true;
+    };
+    return { calls, exec };
+  };
+  it('types each line and starts a new paragraph between lines', () => {
+    const { calls, exec } = record();
+    insertLines(exec, 'A\nB\n\nC');
+    expect(calls).toEqual(['insertText:A', 'insertParagraph', 'insertText:B', 'insertParagraph', 'insertParagraph', 'insertText:C', ]);
+  });
+  it('handles Windows line endings and a trailing newline', () => {
+    const { calls, exec } = record();
+    insertLines(exec, 'A\r\nB\n');
+    expect(calls).toEqual(['insertText:A', 'insertParagraph', 'insertText:B', 'insertParagraph']);
+  });
+  it('types a single line without any paragraph command', () => {
+    const { calls, exec } = record();
+    insertLines(exec, 'Xin chào');
+    expect(calls).toEqual(['insertText:Xin chào']);
+  });
+  it('reports lost line breaks only when the text had some', () => {
+    document.body.innerHTML = '<div id="tb" contenteditable="true"></div>';
+    const box = document.getElementById('tb') as HTMLElement;
+    Object.defineProperty(box, 'innerText', { value: 'AB', configurable: true });
+    expect(keptLineBreaks(box, 'A\nB')).toBe(false);
+    expect(keptLineBreaks(box, 'AB')).toBe(true);
+    Object.defineProperty(box, 'innerText', { value: 'A\nB', configurable: true });
+    expect(keptLineBreaks(box, 'A\nB')).toBe(true);
+  });
+  it('pastes plain text through a paste event', () => {
+    document.body.innerHTML = '<div id="tb" contenteditable="true"></div>';
+    const box = document.getElementById('tb') as HTMLElement;
+    let received = '';
+    box.addEventListener('paste', (e) => { received = (e as ClipboardEvent).clipboardData?.getData('text/plain') ?? ''; });
+    pasteText(box, 'A\nB');
+    expect(received).toBe('A\nB');
+  });
+});
+
+describe('fb-dom: duplicated or multi-line text checks', () => {
+  const post = 'NĂNG LỰC CỦA DOANH NGHIỆP\nGửi đường link website cho khách hàng mới\n\nHotline: 077 317 5996';
+  it('detects text that was entered twice', () => {
+    expect(isDuplicatedText(post + post, post)).toBe(true);
+    expect(isDuplicatedText(post.replace(/\n/g, '') + post, post)).toBe(true);
+  });
+  it('accepts the text once, whatever the whitespace', () => {
+    expect(isDuplicatedText(post, post)).toBe(false);
+    expect(isDuplicatedText(post.replace(/\n/g, ' '), post)).toBe(false);
+    expect(isDuplicatedText(post.replace(/\n/g, ''), post)).toBe(false);
+  });
+  it('ignores very short text', () => {
+    expect(isDuplicatedText('abab', 'ab')).toBe(false);
+  });
+  it('knows whether a text has line breaks', () => {
+    expect(hasLineBreaks('A\nB')).toBe(true);
+    expect(hasLineBreaks('A\r\nB')).toBe(true);
+    expect(hasLineBreaks('A')).toBe(false);
+    expect(hasLineBreaks('A\n')).toBe(false);
+    expect(hasLineBreaks('\n\nA')).toBe(false);
+  });
 });
