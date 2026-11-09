@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyOutcome, createRun, pause, pickVariation, resume, stop } from '../src/lib/run-engine';
-import type { Campaign } from '../src/lib/types';
+import { applyOutcome, continueRun, createRun, pause, pickVariation, resume, stop } from '../src/lib/run-engine';
+import { LIMITS } from '../src/lib/limits';
+import type { Campaign, LogEntry } from '../src/lib/types';
 
 const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   id: 'c1',
@@ -116,5 +117,131 @@ describe('run engine', () => {
   it('rotates variations and ignores blanks', () => {
     expect([0, 1, 2].map((i) => pickVariation(['A', 'B'], i))).toEqual(['A', 'B', 'A']);
     expect(pickVariation(['', '  '], 0)).toBe('');
+  });
+});
+
+describe('retry after a temporary error', () => {
+  const temporary = { kind: 'failed', reason: 'Trang nhóm tải quá lâu.', retryable: true } as const;
+
+  it('retries the same group once after 8 seconds without counting a failure', () => {
+    const c = campaign();
+    const run = createRun(c, NOW);
+    const first = applyOutcome(run, c, temporary, NOW);
+    expect(first.retry).toBe(true);
+    expect(first.state.queue).toEqual(run.queue);
+    expect(first.state.attempted).toBe(0);
+    expect(first.state.consecutiveFailures).toBe(0);
+    expect(first.state.nextAt).toBe(NOW + LIMITS.retryDelayMs);
+    expect(first.state.status).toBe('running');
+  });
+
+  it('moves on and counts one failure when the retry fails too', () => {
+    const c = campaign();
+    const first = applyOutcome(createRun(c, NOW), c, temporary, NOW).state;
+    const second = applyOutcome(first, c, temporary, NOW + 8000);
+    expect(second.retry).toBe(false);
+    expect(second.state.queue).toHaveLength(6);
+    expect(second.state.consecutiveFailures).toBe(1);
+    expect(second.state.retrying).toBeUndefined();
+    expect(second.state.nextAt).toBe(NOW + 8000 + 60_000);
+  });
+
+  it('allows a fresh retry for the next group after a successful retry', () => {
+    const c = campaign();
+    const retrying = applyOutcome(createRun(c, NOW), c, temporary, NOW).state;
+    const done = applyOutcome(retrying, c, ok, NOW + 8000).state;
+    expect(done.retrying).toBeUndefined();
+    expect(applyOutcome(done, c, temporary, NOW + 70_000).retry).toBe(true);
+  });
+
+  it('never retries a failure that may have been submitted', () => {
+    const c = campaign();
+    const result = applyOutcome(createRun(c, NOW), c, fail, NOW);
+    expect(result.retry).toBe(false);
+    expect(result.state.queue).toHaveLength(6);
+    expect(result.state.consecutiveFailures).toBe(1);
+  });
+
+  it('never retries comment campaigns', () => {
+    const c = campaign({ mode: 'comment', commentsPerGroup: 1 });
+    const result = applyOutcome(createRun(c, NOW), c, temporary, NOW);
+    expect(result.retry).toBe(false);
+    expect(result.state.consecutiveFailures).toBe(1);
+  });
+});
+
+describe('pending approval', () => {
+  it('counts as an attempt and resets the failure streak', () => {
+    const c = campaign();
+    let run = createRun(c, NOW);
+    run = applyOutcome(run, c, fail, NOW).state;
+    const after = applyOutcome(run, c, { kind: 'pending' }, NOW).state;
+    expect(after.consecutiveFailures).toBe(0);
+    expect(after.attempted).toBe(2);
+    expect(after.status).toBe('running');
+  });
+});
+
+describe('continue a stopped run', () => {
+  const log = (groupId: string, status: LogEntry['status'], ts = NOW, campaignId = 'c1'): LogEntry => ({
+    id: `${groupId}-${status}-${ts}`, ts, campaignId, groupId, groupName: groupId, status, message: '',
+  });
+  const stopped = (c: Campaign, attempts: number) => {
+    let run = createRun(c, NOW);
+    for (let i = 0; i < attempts; i++) run = applyOutcome(run, c, ok, NOW).state;
+    return stop(run);
+  };
+
+  it('waits a fresh delay and keeps the remaining groups', () => {
+    const c = campaign();
+    const next = continueRun(stopped(c, 2), c, [], NOW + 5);
+    expect(next.status).toBe('running');
+    expect(next.queue).toEqual(['g3', 'g4', 'g5', 'g6', 'g7']);
+    expect(next.nextAt).toBe(NOW + 5 + 60_000);
+    expect(next.reason).toBeNull();
+  });
+
+  it('skips a group that was posted while the user pressed Stop', () => {
+    const c = campaign();
+    const run = stopped(c, 2); // g3 is still first in the queue
+    const next = continueRun(run, c, [log('g3', 'posted')], NOW + 5);
+    expect(next.queue).toEqual(['g4', 'g5', 'g6', 'g7']);
+    expect(next.attempted).toBe(3);
+    expect(next.total).toBe(7);
+  });
+
+  it('treats a pending post as sent', () => {
+    const c = campaign();
+    expect(continueRun(stopped(c, 2), c, [log('g3', 'pending')], NOW).queue[0]).toBe('g4');
+  });
+
+  it('ignores failed or skipped logs, other campaigns and entries from earlier runs', () => {
+    const c = campaign();
+    const logs = [log('g3', 'failed'), log('g3', 'skipped'), log('g3', 'posted', NOW, 'other'), log('g3', 'posted', NOW - 1)];
+    expect(continueRun(stopped(c, 2), c, logs, NOW).queue[0]).toBe('g3');
+  });
+
+  it('finishes when nothing is left to do', () => {
+    const c = campaign({ groupIds: ['g1', 'g2'] });
+    const next = continueRun(stopped(c, 1), c, [log('g2', 'posted')], NOW);
+    expect(next.status).toBe('done');
+    expect(next.queue).toEqual([]);
+    expect(next.nextAt).toBeNull();
+  });
+
+  it('keeps every comment slot: duplicates are blocked by reserved post links', () => {
+    const c = campaign({ mode: 'comment', commentsPerGroup: 2, groupIds: ['g1', 'g2'] });
+    const run = stopped(c, 1);
+    expect(continueRun(run, c, [log('g1', 'posted')], NOW).queue).toEqual(run.queue);
+  });
+
+  it('only continues a stopped run of the same campaign', () => {
+    const c = campaign();
+    const running = createRun(c, NOW);
+    expect(continueRun(running, c, [], NOW)).toBe(running);
+    const halted = { ...stopped(c, 1), status: 'halted' as const };
+    expect(continueRun(halted, c, [], NOW)).toBe(halted);
+    const stoppedOther = stopped(campaign({ id: 'other' }), 1);
+    expect(continueRun(stoppedOther, c, [], NOW)).toBe(stoppedOther);
   });
 });

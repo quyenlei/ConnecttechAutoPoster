@@ -4,10 +4,22 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+Patch versions 0.2.1–0.2.18 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here until the next release is cut.
+
+### Verified
+- The owner ran the extension by hand on live Facebook and confirmed it works. This was a manual check; individual items below marked "unverified" were not itemized in that check.
+
 ### Added
-- Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Not yet verified on the local mock or live Facebook.
+- Posts held for admin approval are logged as `pending` ("Chờ duyệt") instead of a success. Detection is unverified on live Facebook.
+- One automatic retry, 8 s later, for post campaigns when a failure happened before anything was submitted. Failures that may have been submitted, and all comment failures, are never retried.
+- **Chạy tiếp** on a stopped run: waits a fresh delay and skips groups already posted in that run.
+- Opt-in desktop notifications when a run finishes, pauses by itself or is halted (new `notifications` permission; off by default; see `docs/SAFETY_AND_PRIVACY.md`).
+- **Tổng quan** tab: sent and failed counts for today and the last 7 days, plus the success rate, from the activity log.
+- Comment campaigns for recent group posts with a configurable per-group limit and locally stored retry protection. Verified on the local mock (comment sent once, a re-run skips the already-attempted post, a group without a recent post is skipped); not yet verified on live Facebook.
 
 ### Changed
+- Docs brought in line with the code: README status and feature table, comment campaigns in the user guide, safety rules, architecture and roadmap; fixed `ppnpm` typos in the development guide.
+- `pnpm test:e2e` now starts from a fresh browser profile, and the smoke test covers comment re-run protection and groups without an eligible post.
 - Require a new visible comment as well as a cleared editor before reporting a comment as sent; uncertain submissions remain reserved.
 - Read Facebook's structured group feed stories and their absolute creation times when timestamp links have deferred URLs.
 - Advance immediately to the next group's scan when a group has no identifiable unattempted posts, while preserving the delay after submissions and safety breaks.

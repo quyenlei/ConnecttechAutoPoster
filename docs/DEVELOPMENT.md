@@ -15,9 +15,9 @@ Load `.output/chrome-mv3` as an unpacked extension for manual testing.
 ## Tests
 | Layer | Tool | Command | Covers |
 |---|---|---|---|
-| Unit | Vitest (node) | `ppnpm test` | delay, groups, run-engine, csv |
-| DOM | Vitest + happy-dom | `ppnpm test` | `fb-dom.ts` selectors and detection |
-| Smoke | Playwright + Chromium | `ppnpm test:e2e` | full campaign via UI against a **local mock** group page |
+| Unit | Vitest (node) | `pnpm test` | delay, groups, run-engine, schedule, csv |
+| DOM | Vitest + happy-dom | `pnpm test` | `fb-dom.ts` selectors and detection |
+| Smoke | Playwright + Chromium | `pnpm test:e2e` | post, schedule and comment campaigns (incl. comment re-run protection) via the UI against a **local mock** group page; starts from a fresh browser profile |
 
 The smoke test maps `www.facebook.com` to `127.0.0.1:8443` and all other hosts to NOT FOUND, so it **never contacts real Facebook**. Keep it that way. Never add tests that post to real groups.
 
@@ -36,6 +36,6 @@ See [CLAUDE.md](../CLAUDE.md) and `.claude/rules/`. In short: strict TypeScript,
 
 ## Release
 1. Update `CHANGELOG.md`. Each `pnpm build` increments the patch version in `package.json` before building; the resulting manifest version is displayed in the dashboard and popup. A failed build also consumes a version number. `pnpm dev` and `pnpm zip` do not increment it.
-2. `pnpm typecheck && pnpm test && ppnpm test:e2e`.
+2. `pnpm typecheck && pnpm test && pnpm test:e2e`.
 3. `pnpm zip` → `.output/*.zip` for the Chrome Web Store.
 4. Review `docs/SAFETY_AND_PRIVACY.md` against any permission change (store review requires a justification per permission).

@@ -53,16 +53,19 @@ The run bar is visible on every tab.
 - **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
 - CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
+- **Chạy tiếp**: after you press **Dừng**, a button **Chạy tiếp N nhóm còn lại** appears. It asks first, waits a fresh random delay, and skips groups that already have a posted or pending entry in that run (for example a post that went out just as you pressed Stop). It does not appear after a checkpoint/block. **Lưu và chạy** always starts from the first group again.
+- If a group fails before anything is sent (page did not load, composer not found), CAP tries the same group once more after 8 seconds; the log shows "Lỗi tạm thời, thử lại sau 8 giây". Failures that might have been submitted are never retried.
+- If Facebook holds the post for admin approval, the log shows **Chờ duyệt**. This counts as sent. Detection is not verified on live Facebook, so a pending post may still appear as **Đã đăng**.
+- The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
 
 ### Bình luận bài viết trong nhóm
 Trong trình soạn chiến dịch, chọn **Bình luận bài viết trong nhóm**, đặt số bài tối đa cho mỗi nhóm và nhập một hoặc nhiều phiên bản bình luận. Công cụ mở bảng tin với tham số `sorting_setting=RECENT_ACTIVITY`, chờ và cuộn tối đa bốn lần, rồi ưu tiên theo thời gian đăng trong số bài đã tải có liên kết và thời gian xác định được trong 24 giờ gần nhất. Thứ tự hoạt động gần đây không nhất thiết là thứ tự bài đăng mới nhất và Facebook có thể không áp dụng tham số này; đây không phải danh sách đầy đủ. Mỗi lượt bình luận áp dụng khoảng chờ và nghỉ an toàn như đăng bài. Các bài đã thử được ghi nhận trên thiết bị không tự hết hạn để tránh tự gửi lại, kể cả khi kết quả chưa rõ. Nếu không tìm thấy bài đủ điều kiện, lượt đó sẽ được bỏ qua và ghi số bài cùng số thẻ thời gian đọc được.
 
-Chức năng này chỉ được thiết kế để kiểm thử với mock cục bộ, chưa xác nhận hoạt động trên Facebook thật. Facebook có thể không cung cấp thời gian hoặc ô bình luận theo định dạng nhận diện được, khiến bài bị bỏ qua hoặc lượt chạy thất bại.
+Chức năng này đã được kiểm thử trên mock cục bộ (gồm việc không bình luận lặp lại cùng một bài và bỏ qua nhóm không có bài phù hợp), nhưng chưa xác nhận hoạt động trên Facebook thật. Facebook có thể không cung cấp thời gian hoặc ô bình luận theo định dạng nhận diện được, khiến bài bị bỏ qua hoặc lượt chạy thất bại.
 Thời gian tương đối như “16 phút” hoặc “2 giờ trước” được đọc khi gắn trực tiếp với liên kết bài; thời gian này là ước lượng vì Facebook làm tròn.
 Công cụ cũng đọc ID, liên kết và thời gian tạo từ dữ liệu bài viết Facebook đưa vào trang, đối chiếu nhóm trước khi chọn bài.
 Khi không còn bài chưa thử mà công cụ xác định được trong nhóm hiện tại, các lượt còn lại của nhóm đó được bỏ qua và chiến dịch tiếp tục quét nhóm kế tiếp ngay, trừ khi đến kỳ nghỉ an toàn. Khoảng chờ sau lượt bình luận vẫn được áp dụng. Facebook vẫn có thể có bài khác mà công cụ chưa nhận diện được ID.
 Nếu thấy thông báo đã phát hiện ô bình luận nhưng không xác định được bài viết và thời gian đăng, cấu trúc Facebook hiện tại chưa được hỗ trợ; công cụ không tự gửi bình luận trong trường hợp này.
-- The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
 
 ### Daily schedule (Hẹn giờ chạy)
 In the campaign editor, section **Thời gian và an toàn**, tick **Tự động chạy chiến dịch này mỗi ngày**, then **Thêm giờ**.
@@ -72,10 +75,15 @@ In the campaign editor, section **Thời gian và an toàn**, tick **Tự độn
 - If another run is active at that time, the scheduled start is skipped.
 - If Facebook shows a checkpoint or block, all schedules turn off. Turn them back on after you resolve it on Facebook.
 - Posting the same text twice a day can look like spam; add more versions.
-- Verified only on the local mock, not on live Facebook.
+- Automated tests use the local mock only. The owner confirmed by hand that the extension works on live Facebook.
 
-## 4. Activity (tab Nhật ký)
-Shows every attempt: **Đã đăng** (posted), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
+## 4. Overview (tab Tổng quan)
+Shows how many posts and comments were sent today and in the last 7 days (today plus the 6 days before), how many failed, and the success rate (sent ÷ sent + failed; skipped groups are not counted). Numbers come from the activity log, which keeps the latest 2000 entries, so clearing the log resets them.
+
+The checkbox **Thông báo trên máy…** (off by default) shows a desktop notification when a run finishes, pauses by itself or is halted. It contains the campaign name and counts only. Chrome and your operating system must allow notifications.
+
+## 5. Activity (tab Nhật ký)
+Shows every attempt: **Đã đăng** (posted), **Chờ duyệt** (sent, waiting for admin approval), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
 
 ## Troubleshooting
 | Message | Meaning / action |

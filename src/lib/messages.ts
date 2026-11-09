@@ -38,6 +38,8 @@ export type RunCommand =
   | { type: 'cap/run/start'; campaignId: string }
   | { type: 'cap/run/pause' }
   | { type: 'cap/run/resume' }
+  /** Continues a run the user stopped; groups already posted are skipped. */
+  | { type: 'cap/run/continue' }
   | { type: 'cap/run/stop' }
   | { type: 'cap/run/reset' }
   /** Opens groups without a name one by one (read-only) and stores the names. */

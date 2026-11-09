@@ -49,6 +49,7 @@
   }
 
   &--skipped,
+  &--pending,
   &--break,
   &--paused {
     color: var(--color-warning);

@@ -6,9 +6,9 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 - **You stay in control.** You choose the groups and the text; you can pause or stop any time.
 - **Safe by default.** Minimum wait, recommended delays, Safety Break, auto-pause after repeated failures, stop on Facebook warnings.
 
-> Status: **MVP v0.2.0**. The posting flow is verified end to end against a local mock of a group page. It has **not** been verified against live Facebook, whose layout changes often. See [Known limits](#known-limits).
+> Status: **v0.2**. The posting, schedule and comment flows are verified end to end against a local mock of a group page. The project owner has also run the extension by hand on live Facebook and confirmed that it works. That check was manual and is not covered by automated tests, and Facebook's layout changes often, so selectors may need fixing again. See [Known limits](#known-limits).
 
-## Features (v0.1)
+## Features
 
 | Area | What works |
 |---|---|
@@ -16,9 +16,12 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 | Campaigns | Several saved campaigns, 1–10 post versions rotating across groups, up to 100 groups |
 | Timing | Random wait range (min 30 s), recommended delay by group count, warnings for risky settings, time estimate |
 | Safety | Safety Break every N posts, auto-pause after 5 failures in a row, immediate halt on checkpoint or "temporarily blocked", skip groups you cannot post in |
-| Run control | Pause, Resume, Stop, live countdown, progress, survives browser/service-worker restarts |
-| Activity | Filter by status, export CSV (spreadsheet-formula safe), clear |
-| UI | Light/dark automatically, keyboard accessible, English UI |
+| Run control | Pause, Resume, Stop, continue a stopped run, one retry after temporary errors, live countdown, progress, survives browser/service-worker restarts |
+| Activity | Filter by status (including posts waiting for admin approval), export CSV (spreadsheet-formula safe), clear |
+| Overview | Sent and failed counts for today and the last 7 days, success rate, opt-in desktop notifications |
+| Comments | Comment campaigns: comment on recent posts (last 24 h) in each group, with a per-group limit and local protection against commenting on the same post twice |
+| Schedule | Optional daily start times (max 2 per campaign, at least 6 h apart) |
+| UI | Light/dark automatically, keyboard accessible, Vietnamese UI |
 
 ## Tech stack
 
@@ -49,7 +52,7 @@ Start with 5–10 groups and the recommended delay.
 | `pnpm dev` | Dev server with HMR |
 | `pnpm build` / `pnpm zip` | Production build / store zip |
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm test` | Unit tests (26) |
+| `pnpm test` | Unit and DOM tests |
 | `pnpm test:e2e` | Build, then run the browser smoke test against a local mock (no real network) |
 
 ## Documentation
@@ -68,7 +71,8 @@ Start with 5–10 groups and the recommended delay.
 
 - Facebook offers **no public API** for posting to groups. CAP drives the visible web UI like a person would, so it can break when Facebook changes its markup. All selectors live in [`src/lib/fb-dom.ts`](src/lib/fb-dom.ts) with English and Vietnamese hints.
 - Browser must stay open; the posting tabs open in the background and close themselves.
-- Text posts only (no photos or link previews). Scheduling is limited to fixed daily times, max 2 per campaign (v0.2).
+- Text posts and text comments only (no photos or link previews). Scheduling is limited to fixed daily times, max 2 per campaign (v0.2).
+- Comment campaigns depend on Facebook exposing a post link and time in the feed; when CAP cannot identify a post it skips the group instead of guessing.
 - Automating Facebook can violate its Terms and can get an account limited. You are responsible for your use. See [docs/SAFETY_AND_PRIVACY.md](docs/SAFETY_AND_PRIVACY.md).
 
 ## Origin and independence

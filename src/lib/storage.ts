@@ -1,12 +1,14 @@
 import { storage } from 'wxt/utils/storage';
 import { IDLE_RUN } from './run-engine';
-import type { Campaign, Group, LogEntry, RunState } from './types';
+import type { Campaign, Group, LogEntry, RunState, Settings } from './types';
 
 /** All data stays in chrome.storage.local on this device. Nothing is sent anywhere. */
 export const groupsItem = storage.defineItem<Group[]>('local:groups', { fallback: [] });
 export const campaignsItem = storage.defineItem<Campaign[]>('local:campaigns', { fallback: [] });
 export const logsItem = storage.defineItem<LogEntry[]>('local:logs', { fallback: [] });
 export const runItem = storage.defineItem<RunState>('local:run', { fallback: IDLE_RUN });
+export const DEFAULT_SETTINGS: Settings = { notifyOnFinish: false };
+export const settingsItem = storage.defineItem<Settings>('local:settings', { fallback: DEFAULT_SETTINGS });
 /** Reserved before submitting so an interrupted run cannot retry the same post. */
 export const commentedPostsItem = storage.defineItem<Record<string, number>>('local:commentedPosts', { fallback: {} });
 /** Epoch ms of the last time due schedule slots were processed. */

@@ -7,6 +7,8 @@ export const LIMITS = {
   maxCommentsPerGroup: 100,
   maxVariations: 10,
   maxPostLength: 5000,
+  /** A failure that happened before anything was submitted is retried once after this wait. */
+  retryDelayMs: 8_000,
   /** Auto-pause the run after this many failures in a row. */
   maxConsecutiveFailures: 5,
   /** Wait for a group page to finish loading. */

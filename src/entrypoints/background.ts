@@ -2,9 +2,10 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { LIMITS } from '@/lib/limits';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest } from '@/lib/messages';
-import { applyOutcome, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
+import { describeRunEnd } from '@/lib/notify';
+import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, groupsItem, runItem, scheduleCheckItem, commentedPostsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, groupsItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { hasPlaceholderName, recentActivityGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -133,6 +134,22 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       await schedule(next.nextAt);
       return { ok: true };
     }
+    case 'cap/run/continue': {
+      if (stepping) return { ok: false, error: 'Lượt gửi trước đang hoàn tất. Hãy thử lại sau vài giây.' };
+      if (run.status !== 'stopped') return { ok: false, error: 'Chỉ chạy tiếp được lượt đã dừng.' };
+      const campaign = await currentCampaign(run);
+      if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
+      const problem = validateCampaign(campaign);
+      if (problem) return { ok: false, error: problem };
+      const next = continueRun(run, campaign, await logsItem.getValue(), Date.now());
+      await runItem.setValue(next);
+      const skipped = next.attempted - run.attempted;
+      await log(campaign.id, null, 'info', next.status === 'done'
+        ? 'Không còn nhóm nào cần chạy tiếp.'
+        : `Chạy tiếp lượt đã dừng: còn ${next.queue.length} mục${skipped > 0 ? `, bỏ qua ${skipped} nhóm đã đăng` : ''}.`);
+      await schedule(next.status === 'running' ? next.nextAt : null);
+      return { ok: true };
+    }
     case 'cap/run/stop': {
       await runItem.setValue(stop(run));
       await schedule(null);
@@ -197,16 +214,39 @@ async function runStep(): Promise<void> {
       return;
     }
 
-    const { state, breakMinutes } = applyOutcome(latest, campaign, outcome, Date.now());
-    await log(campaign.id, logGroup, toStatus(outcome), describe(outcome, campaign.mode));
+    const { state, breakMinutes, retry } = applyOutcome(latest, campaign, outcome, Date.now());
+    if (retry) {
+      const seconds = Math.round(LIMITS.retryDelayMs / 1000);
+      await log(campaign.id, logGroup, 'info', `Lỗi tạm thời, thử lại sau ${seconds} giây: ${describe(outcome, campaign.mode)}`);
+    } else {
+      await log(campaign.id, logGroup, toStatus(outcome), describe(outcome, campaign.mode));
+    }
     if (breakMinutes !== null) await log(campaign.id, null, 'break', `Nghỉ an toàn: ${breakMinutes} phút.`);
     if (state.status === 'done') await log(campaign.id, null, 'info', 'Đã chạy xong.');
     if (state.status === 'halted' || state.status === 'paused') await log(campaign.id, null, 'info', state.reason ?? '');
     await runItem.setValue(state);
     if (state.status === 'halted') await disableAllSchedules(campaign.id);
     await schedule(state.status === 'running' ? state.nextAt : null);
+    await notifyRunEnd(latest.status, state, campaign);
   } finally {
     stepping = false;
+  }
+}
+
+/** Opt-in desktop notification. Never throws: a notification problem must not affect the run. */
+async function notifyRunEnd(previous: RunState['status'], state: RunState, campaign: Campaign): Promise<void> {
+  try {
+    if (!(await settingsItem.getValue()).notifyOnFinish) return;
+    const notice = describeRunEnd(previous, state, campaign);
+    if (!notice) return;
+    await browser.notifications.create(`cap-run-${Date.now()}`, {
+      type: 'basic',
+      iconUrl: browser.runtime.getURL('/icon-128.png'),
+      title: notice.title,
+      message: notice.message,
+    });
+  } catch {
+    // notifications are optional
   }
 }
 
@@ -257,11 +297,14 @@ async function fetchGroupNames(): Promise<void> {
 
 async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
   let tabId: number | undefined;
+  // Until the page has loaded nothing can have been submitted, so a failure up to that point is safe to retry.
+  let loaded = false;
   try {
     const tab = await browser.tabs.create({ url: group.url, active: false });
     tabId = tab.id;
-    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.' };
+    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.', retryable: true };
     await waitForTab(tabId);
+    loaded = true;
     if (hasPlaceholderName(group)) {
       const found = await askGroupName(tabId);
       if (found.name) await saveGroupName(group.id, found.name);
@@ -274,7 +317,7 @@ async function postToGroup(group: Group, text: string): Promise<PostOutcome> {
     )) as PostReply;
     return reply;
   } catch (e) {
-    return { kind: 'failed', reason: e instanceof Error ? e.message : String(e) };
+    return { kind: 'failed', reason: e instanceof Error ? e.message : String(e), ...(loaded ? {} : { retryable: true }) };
   } finally {
     if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
   }
@@ -357,9 +400,13 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 }
 
 const toStatus = (o: PostOutcome): LogStatus =>
-  o.kind === 'posted' ? 'posted' : o.kind === 'skipped' ? 'skipped' : 'failed';
+  o.kind === 'posted' ? 'posted' : o.kind === 'pending' ? 'pending' : o.kind === 'skipped' ? 'skipped' : 'failed';
 
-const describe = (o: PostOutcome, mode?: Campaign['mode']): string => (o.kind === 'posted' ? mode === 'comment' ? 'Đã gửi bình luận.' : 'Đã gửi bài đăng.' : o.reason);
+const describe = (o: PostOutcome, mode?: Campaign['mode']): string => {
+  if (o.kind === 'posted') return mode === 'comment' ? 'Đã gửi bình luận.' : 'Đã gửi bài đăng.';
+  if (o.kind === 'pending') return 'Đã gửi bài, đang chờ quản trị viên nhóm phê duyệt.';
+  return o.reason;
+};
 
 async function log(campaignId: string, group: Group | null, status: LogStatus, message: string): Promise<void> {
   await appendLog({
