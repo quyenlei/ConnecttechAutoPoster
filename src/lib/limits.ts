@@ -7,6 +7,11 @@ export const LIMITS = {
   maxCommentsPerGroup: 100,
   maxVariations: 10,
   maxPostLength: 5000,
+  /** Safety Break: pause after at most this many posts, for at most this many minutes. */
+  maxSafetyBreakEvery: 100,
+  maxSafetyBreakMinutes: 240,
+  /** The activity log keeps only the newest entries. */
+  maxLogEntries: 2000,
   /** A failure that happened before anything was submitted is retried once after this wait. */
   retryDelayMs: 8_000,
   /** Auto-pause the run after this many failures in a row. */
