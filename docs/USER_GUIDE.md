@@ -85,6 +85,14 @@ The checkbox **Thông báo trên máy…** (off by default) shows a desktop noti
 ## 5. Activity (tab Nhật ký)
 Shows every attempt: **Đã đăng** (posted), **Chờ duyệt** (sent, waiting for admin approval), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
 
+## 6. Backup (tab Sao lưu)
+- **Xuất bản sao lưu** saves groups, campaigns, settings and the activity log to `cap-backup-YYYY-MM-DD.json`. The file contains your post texts and group names and is **not encrypted**, so keep it somewhere safe. Facebook data is never included.
+- To restore, choose a file under **Nhập bản sao lưu**. A preview shows what will be added and what already exists. Press **Nhập dữ liệu** to confirm, or **Hủy**.
+- Import only adds. Items that already exist are kept as they are; nothing is deleted or overwritten.
+- **Schedules are switched off** on every imported campaign. Turn them on again in the campaign when you are ready.
+- Import is refused while a run is active. Stop it or wait until it ends. Importing never starts a run.
+- Invalid items in the file (for example a wrong group link) are skipped, and values are brought back within the safety limits.
+
 ## Troubleshooting
 | Message | Meaning / action |
 |---|---|

@@ -36,6 +36,8 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 - No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries), settings (notification on/off). The Tổng quan page is computed from that log on this device.
 - Comment campaigns keep attempted post links locally without automatic expiry and run-slot identifiers for seven days to avoid automatic retries after an uncertain submission.
+- **Backup file (tab Sao lưu):** created only when you press export, saved by the browser to your own device. It contains post texts, group names and the activity log, and is not encrypted. CAP never uploads it. It never contains Facebook cookies, tokens, run state or comment re-run protection data.
+- **Import safety:** a file never starts a run and never turns on automatic behaviour. Imported schedules are switched off. Values are clamped to the same hard limits as the UI (minimum delay 30 s, group, variation and length caps), and import is refused while a run is active. No permission or host was added for backup.
 - CAP never reads, stores or transmits Facebook cookies, tokens or passwords. It uses the browser's existing logged-in session by opening normal tabs.
 - Uninstalling the extension deletes all data.
 

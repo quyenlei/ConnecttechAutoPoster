@@ -36,6 +36,7 @@ src/
 │  ├─ notify.ts                text of the run-finished notification
 │  ├─ run-engine.ts            pure run state machine
 │  ├─ fb-dom.ts                ALL Facebook selectors and text hints
+│  ├─ backup.ts                JSON backup: build, validate (`parseBackup`), merge (`planImport`)
 │  ├─ csv.ts                   CSV export with formula-injection guard
 │  ├─ storage.ts               typed storage items (groups, campaigns, logs, run)
 │  └─ messages.ts              message types and guards
@@ -80,6 +81,15 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 - `continueRun` (pure) turns a `stopped` run back into `running` with a fresh delay and, for post campaigns, drops queued groups that have a posted or pending log entry since `startedAt`. The background refuses it while a step is still in flight.
 - `notifyRunEnd` runs after each step. It checks `local:settings.notifyOnFinish` (default off), asks `describeRunEnd` for the text and calls `notifications.create`. Errors are swallowed so a notification can never affect the run.
 - The Tổng quan view calls `summarize(logs, now)` on the stored log; there is no separate counter to keep in sync.
+
+## Backup and restore
+
+`src/lib/backup.ts` is pure; `storage.ts` adds `readBackupData` and `writeImportedData`; `BackupView` holds only state and events.
+
+- **File:** `{ app, formatVersion: 1, exportedAt, appVersion, data: { groups, campaigns, settings, logs } }`. `local:run`, `local:commentedPosts` and `local:scheduleCheck` are never exported.
+- **`parseBackup(text)`** refuses files over 5 MB, broken JSON, another `app` and a newer `formatVersion`. Otherwise it rebuilds every item from known fields only and passes values through `LIMITS`, `clampDelay`, `parseGroupSlug` and `validateTimes`. Invalid items are dropped and counted.
+- **`planImport(current, backup)`** merges without deleting. An existing id keeps the current item. Groups also match by canonical URL, and campaign `groupIds` follow the match. Imported schedules are set to `enabled: false`. Logs merge by id and keep the newest `LIMITS.maxLogEntries`. File settings apply only when the current settings are the defaults.
+- **Write:** the view merges again with fresh data on confirm. `writeImportedData` checks `isActive(run)` right before writing and refuses while a run is active. Nothing in this flow starts a run.
 
 ## Comment campaigns
 

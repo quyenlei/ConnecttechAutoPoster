@@ -109,8 +109,8 @@ export function CampaignsView() {
       },
       safetyBreak: {
         ...draft.safetyBreak,
-        everyPosts: Math.min(100, Math.max(1, draft.safetyBreak.everyPosts)),
-        breakMinutes: Math.min(240, Math.max(1, draft.safetyBreak.breakMinutes)),
+        everyPosts: Math.min(LIMITS.maxSafetyBreakEvery, Math.max(1, draft.safetyBreak.everyPosts)),
+        breakMinutes: Math.min(LIMITS.maxSafetyBreakMinutes, Math.max(1, draft.safetyBreak.breakMinutes)),
       },
       schedule: { enabled: schedule.enabled, times: scheduleError ? [] : scheduleTimes },
     };
@@ -272,11 +272,11 @@ export function CampaignsView() {
                 <div className="campaigns__row">
                   <div className="field">
                     <label className="field__label" htmlFor="c-every">Nghỉ sau số lượt thực hiện</label>
-                    <input id="c-every" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={100} value={draft.safetyBreak.everyPosts || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, everyPosts: num(e.target.value) } })} />
+                    <input id="c-every" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={LIMITS.maxSafetyBreakEvery} value={draft.safetyBreak.everyPosts || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, everyPosts: num(e.target.value) } })} />
                   </div>
                   <div className="field">
                     <label className="field__label" htmlFor="c-break">Thời gian nghỉ (phút)</label>
-                    <input id="c-break" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={240} value={draft.safetyBreak.breakMinutes || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, breakMinutes: num(e.target.value) } })} />
+                    <input id="c-break" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={1} max={LIMITS.maxSafetyBreakMinutes} value={draft.safetyBreak.breakMinutes || ''} onChange={(e) => patch({ safetyBreak: { ...draft.safetyBreak, breakMinutes: num(e.target.value) } })} />
                   </div>
                 </div>
               )}

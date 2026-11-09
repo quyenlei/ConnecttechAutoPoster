@@ -1,0 +1,32 @@
+@use '../abstracts/variables' as *;
+
+.backup {
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $space-2;
+  }
+
+  &__preview {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+    padding: $space-3;
+    border: 1px solid var(--color-border);
+    border-radius: $radius;
+    background: var(--color-surface-alt);
+  }
+
+  &__preview-title {
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+  }
+
+  &__preview-notes {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    padding-left: $space-4;
+    color: var(--color-muted);
+  }
+}
