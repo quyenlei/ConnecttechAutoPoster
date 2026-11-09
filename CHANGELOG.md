@@ -4,6 +4,22 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+Verification status: everything below is tested with unit tests and the local mock only. None of it has been verified on live Facebook. In particular the image input, the "upload finished" check and the preview close button are guesses about Facebook's markup.
+
+### Added
+- **Post template `{group}`:** write `Xin chào {group}!` and each group gets its own name. Matching ignores case and spaces inside the braces. Other `{...}` text is posted as typed (the form shows a warning). If the group name is unknown, "bạn" is used so a bare `{group}` never reaches a post. Replaced in one place, the background, right before the post request; a post that becomes too long after replacing fails with a clear reason.
+- **Image attachments** for post campaigns (not for comment campaigns): up to 4 images (JPG, PNG, WebP), 1 MB each after shrinking, 4 MB for all campaigns together. Large images are shrunk on your device. Images stay in `chrome.storage.local`. The content script adds them through the composer's file input and waits for the upload before pressing Post. If the input cannot be found, or the upload does not finish, the post fails and is **not** sent as text only.
+- **Bỏ xem trước link khi đăng** (`removeLinkPreview`, off by default): after typing and attaching images, the content script waits once (4 s) for the link preview card and closes it. No card is not an error.
+- Backups now include campaign images and `removeLinkPreview`. Import checks images against the same limits and counts what it leaves out.
+
+### Fixed
+- **Line breaks in posts:** on live Facebook a multi-line post (reported by the owner with screenshots) was posted as one block, because the whole text went in with a single `insertText` call. A first fix (type line by line, then clear and paste) posted the text **twice**, because clearing the box did nothing there. Now a multi-line text is pasted as plain text once (the paste kept the lines on live Facebook in the owner's screenshot); only if the box is still empty afterwards is it typed line by line. The box is never cleared and refilled. The post is **not** sent, and the group fails (retryable, nothing was submitted), when the box holds the text about twice ("bị lặp") or shows no line breaks ("không giữ được xuống dòng"). Verified on the local mock only, which has editors that keep lines only for a paste or lose them entirely; the paste-first flow is **unverified as a whole on live Facebook**. Comments are unchanged.
+
+### Changed
+- Backup file size limit raised from 5 MB to 8 MB so a full set of images fits.
+- `LIMITS` gained `maxImagesPerCampaign`, `maxImageBytes`, `maxTotalImageBytes`, `maxImageEdgePx`, `imageUploadTimeoutMs` and `linkPreviewWaitMs`.
+- No new permission or host.
+
 ## [0.4.0] - 2026-11-09
 
 Patch versions 0.2.1–0.2.20 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here.

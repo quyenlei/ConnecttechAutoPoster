@@ -19,9 +19,9 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 - [x] Notifications (`notifications` permission, opt-in) when a run finishes, pauses or halts.
 
 ## v0.3 content
-- [ ] Photo attachments (file picker in the dialog).
-- [ ] Link preview selection.
-- [ ] Post templates with placeholders such as `{group}`.
+- [x] Photo attachments for post campaigns (up to 4 images, stored locally, included in backups). Local mock only; the image input and upload check are unverified on live Facebook.
+- [x] Bật/tắt xem trước link (close the link preview card before posting). Local mock only; unverified on live Facebook. Choosing the preview image or title is left for later.
+- [x] Post template placeholder `{group}`. Other placeholders (such as `{date}`) are not planned yet.
 
 ## v0.4 data
 - [x] Backup and restore (JSON export/import with preview; never includes Facebook data). Tested with unit tests and the local mock only.

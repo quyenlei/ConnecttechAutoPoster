@@ -40,6 +40,9 @@ If you add a link without a name, the list shows the group id. Press **Lấy tê
 Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 1. **Name** it.
 2. **Post text**: write version 1. **Add another version** to rotate texts so consecutive groups differ (version n is used for the n-th group, then repeats).
+   - Write `{group}` where the group name should go, for example `Xin chào {group}!`. In the group "Dev Hà Nội" this is posted as `Xin chào Dev Hà Nội!`. Press **Chèn {group}** to add it at the cursor. Only `{group}` is replaced; any other `{...}` is posted as typed, and the form warns you. If CAP does not know the group name yet, it writes "bạn" instead. Use **Lấy tên nhóm** on the Groups tab to read the real names first.
+   - **Ảnh đính kèm** (post campaigns only): choose up to 4 JPG, PNG or WebP images. Big images are shrunk on your computer to at most 1 MB each; all campaigns together may use 4 MB. Images stay in this browser and are only sent to Facebook when a post is made. If CAP cannot find the image input or the upload does not finish, that group is marked failed and **no text-only post is made**. (Tested on a local mock only, not on live Facebook.)
+   - **Bỏ xem trước link khi đăng**: closes Facebook's link preview card before posting. Facebook may not show a card in every group; if there is none, the post goes out normally. (Local mock only.)
 3. **Groups**: tick the groups (max 100). Type in the search box to filter by name. **Chọn tất cả** (Select all) and **Bỏ chọn** (Clear) act on the groups currently shown, so you can search first and select only those.
 4. **Timing and safety**:
    - Wait range in seconds. Minimum 30. Press **Use recommended** for a suggestion based on group count.
@@ -86,12 +89,12 @@ The checkbox **Thông báo trên máy…** (off by default) shows a desktop noti
 Shows every attempt: **Đã đăng** (posted), **Chờ duyệt** (sent, waiting for admin approval), **Thất bại** (failed), **Đã bỏ qua** (skipped: not a member, cannot post, removed), **Nghỉ an toàn** (break), **Thông tin** (info). Filter by status and **Export CSV**.
 
 ## 6. Backup (tab Sao lưu)
-- **Xuất bản sao lưu** saves groups, campaigns, settings and the activity log to `cap-backup-YYYY-MM-DD.json`. The file contains your post texts and group names and is **not encrypted**, so keep it somewhere safe. Facebook data is never included.
+- **Xuất bản sao lưu** saves groups, campaigns, settings and the activity log to `cap-backup-YYYY-MM-DD.json`. The file contains your post texts, group names and **campaign images** (so it can be a few MB) and is **not encrypted**, so keep it somewhere safe. Facebook data is never included.
 - To restore, choose a file under **Nhập bản sao lưu**. A preview shows what will be added and what already exists. Press **Nhập dữ liệu** to confirm, or **Hủy**.
 - Import only adds. Items that already exist are kept as they are; nothing is deleted or overwritten.
 - **Schedules are switched off** on every imported campaign. Turn them on again in the campaign when you are ready.
 - Import is refused while a run is active. Stop it or wait until it ends. Importing never starts a run.
-- Invalid items in the file (for example a wrong group link) are skipped, and values are brought back within the safety limits.
+- Invalid items in the file (for example a wrong group link or an image over the limits) are skipped, and the preview tells you how many images do not fit, and values are brought back within the safety limits.
 
 ## Troubleshooting
 | Message | Meaning / action |

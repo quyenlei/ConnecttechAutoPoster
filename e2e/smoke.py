@@ -19,9 +19,30 @@ setTimeout(()=>{
 }, 2000);
 document.getElementById('open').onclick=()=>{
   const d=document.createElement('div'); d.setAttribute('role','dialog');
-  d.innerHTML='<div role="textbox" contenteditable="true" id="tb"></div><div role="button" aria-label="Post" id="post">Post</div>';
+  const slug = location.pathname.split('/')[2];
+  // The group "mocknoimg" has a composer without an image input.
+  d.innerHTML='<div role="textbox" contenteditable="true" id="tb"></div>' + (slug === 'mocknoimg' ? '' : '<input type="file" accept="image/*,video/*" multiple id="img">') + '<div role="button" aria-label="Post" id="post">Post</div>';
   document.body.appendChild(d);
-  document.getElementById('post').onclick=()=>{ window.__posted=(window.__posted||[]); fetch('/__posted?t='+encodeURIComponent(document.getElementById('tb').textContent)); d.remove();
+  const tb=document.getElementById('tb');
+  // Editors like Facebook's: a paste of plain text keeps its lines. The group "mockpasteonly" flattens blocks made by
+  // typing (so only a paste keeps the lines); "mocklostbreaks" loses the lines either way, like the failure seen live.
+  // (execCommand fires no beforeinput here, so the mock flattens the blocks right after typing instead.)
+  window.__pasting = false;
+  if (slug === 'mocklostbreaks' || slug === 'mockpasteonly') new MutationObserver(()=>{ if (window.__pasting) return; if (tb.querySelector('div,br')) { tb.textContent=tb.textContent; const r=document.createRange(); r.selectNodeContents(tb); r.collapse(false); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } }).observe(tb,{childList:true,subtree:true,characterData:true});
+  tb.addEventListener('paste', e => { e.preventDefault(); const t=e.clipboardData.getData('text/plain');
+    if (slug === 'mocklostbreaks') { document.execCommand('insertText', false, t.replace(/\\n/g, '')); return; }
+    window.__pasting = true;
+    t.split('\\n').forEach((l,i)=>{ if (i>0) document.execCommand('insertParagraph'); if (l) document.execCommand('insertText', false, l); });
+    setTimeout(()=>{ window.__pasting = false; }, 0); });
+  const inp=document.getElementById('img');
+  if (inp) inp.onchange=()=>{ const bar=document.createElement('div'); bar.setAttribute('role','progressbar'); d.appendChild(bar); const files=[...inp.files];
+    setTimeout(()=>{ bar.remove(); files.forEach(f=>{ const im=document.createElement('img'); im.src=URL.createObjectURL(f); im.setAttribute('data-name', f.name); d.appendChild(im); }); }, 800); };
+  // A link in the text makes the mock show a preview card with a close button, like Facebook does.
+  tb.addEventListener('input',()=>{ if (/http/.test(tb.textContent)) setTimeout(()=>{ if (d.querySelector('#rmprev')) return;
+    const b=document.createElement('div'); b.setAttribute('role','button'); b.setAttribute('aria-label','Remove preview'); b.id='rmprev'; b.onclick=()=>b.remove(); d.appendChild(b); }, 500); });
+  document.getElementById('post').onclick=()=>{ window.__posted=(window.__posted||[]);
+    const names=[...d.querySelectorAll('img')].map(i=>i.getAttribute('data-name')).join(',');
+    fetch('/__posted?t='+encodeURIComponent(tb.textContent)+'&n='+d.querySelectorAll('img').length+'&p='+(d.querySelector('#rmprev')?1:0)+'&names='+encodeURIComponent(names)+'&i='+encodeURIComponent(tb.innerHTML.replace(/<div><br><\\/div>/g,'\\n').replace(/<div>/g,'\\n').replace(/<\\/div>/g,'').replace(/<br>/g,'\\n'))); d.remove();
     if (location.pathname.split('/')[2] === 'mockpending') { const n=document.createElement('div'); n.textContent='Your post is pending approval.'; document.body.appendChild(n); } };
 };
 </script></body></html>"""
@@ -29,12 +50,15 @@ document.getElementById('open').onclick=()=>{
 ext, exe, prof = [os.path.realpath(a) for a in sys.argv[1:4]]
 eid = ''.join(chr(97 + int(c, 16)) for c in hashlib.sha256(ext.encode()).hexdigest()[:32])
 posted = []
+posted_meta = []  # per post: number of images, whether the preview card was still open, image names
 comments = []
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/__posted'):
-            posted.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            posted.append(q['t'][0])
+            posted_meta.append({'n': int(q.get('n', ['0'])[0]), 'p': int(q.get('p', ['0'])[0]), 'names': q.get('names', [''])[0], 'i': q.get('i', [''])[0]})
             body, ctype = b'ok', 'text/plain'
         elif self.path.startswith('/__comment'):
             comments.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
@@ -139,7 +163,11 @@ with sync_playwright() as p:
 
     def wait_for_log(text):
         pg.click("button:has-text('Nhật ký')")
-        pg.wait_for_selector(f"td:has-text('{text}')", timeout=90000)
+        try:
+            pg.wait_for_selector(f"td:has-text('{text}')", timeout=90000)
+        except Exception:
+            print('LOG TABLE AT TIMEOUT:', pg.locator('tbody').inner_text().replace('\t', ' | ')[:1500])
+            raise
 
     # Re-running against the same group must not comment on the same post twice.
     run_comment_campaign('Smoke bình luận lặp', 'Mock One')
@@ -185,6 +213,111 @@ with sync_playwright() as p:
     assert posted[before:] == ['Hello Continue', 'Hello Continue'], posted
     wait_for_log('Chạy tiếp lượt đã dừng')
 
+    # --- v0.5 content: {group} template, image attachments, link preview option (local mock only) ---
+    import base64, zlib, struct
+    def tiny_png(path, size):
+        raw = b''.join(b'\x00' + b'\x30\x60\xa0' * size for _ in range(size))
+        def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+        open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+    img_a, img_b = f"{tmp}/anh-a.png", f"{tmp}/anh-b.png"
+    tiny_png(img_a, 40); tiny_png(img_b, 60)
+
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mocknoimg | Mock NoImg')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock NoImg')")
+
+    def new_post_campaign(name, text, group_label):
+        pg.click("button:has-text('Chiến dịch')")
+        pg.click("button:has-text('Tạo mới')")
+        pg.fill('#c-name', name); pg.fill('#c-var-0', text)
+        pg.check(f"label:has-text('{group_label}') input")
+        pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
+
+    # {group} is replaced with the stored group name; two images are attached and uploaded before Post.
+    new_post_campaign('Smoke ảnh', 'Chào {group}!', 'Mock One')
+    assert pg.locator("text=Dùng {group} để chèn tên nhóm.").count() >= 1, "placeholder hint missing"
+    pg.set_input_files('#c-images', [img_a, img_b])
+    pg.wait_for_selector("img[alt='Ảnh xem trước: anh-a.png']"); pg.wait_for_selector("img[alt='Ảnh xem trước: anh-b.png']")
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert posted[-1] == 'Chào Mock One!', posted
+    assert posted_meta[-1]['n'] == 2 and posted_meta[-1]['names'] == 'anh-a.png,anh-b.png', posted_meta[-1]
+
+    # Unknown placeholders are warned about and posted as typed.
+    new_post_campaign('Smoke mẫu lạ', 'Xin chào {foo}', 'Mock One')
+    pg.wait_for_selector("text=không được hỗ trợ")
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert posted[-1] == 'Xin chào {foo}', posted
+
+    # A composer without an image input: the post fails and no text-only post is sent.
+    count = len(posted)
+    new_post_campaign('Smoke thiếu ô ảnh', 'Chỉ chữ nếu lỗi', 'Mock NoImg')
+    pg.set_input_files('#c-images', [img_a])
+    pg.wait_for_selector("img[alt='Ảnh xem trước: anh-a.png']")
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    wait_for_log('Không tìm thấy ô nhận ảnh')
+    pg.wait_for_selector('.badge--halted, .badge--done, .badge--paused', timeout=120000)
+    assert len(posted) == count, f"a text-only post was sent although images were chosen: {posted}"
+
+    # Link preview: with the option on the card is closed before Post; with it off the card stays.
+    new_post_campaign('Smoke bỏ preview', 'Xem http://example.test/a', 'Mock One')
+    pg.check("label:has-text('Bỏ xem trước link khi đăng') input")
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert posted[-1] == 'Xem http://example.test/a' and posted_meta[-1]['p'] == 0, (posted[-1], posted_meta[-1])
+    new_post_campaign('Smoke giữ preview', 'Xem http://example.test/b', 'Mock One')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert posted[-1] == 'Xem http://example.test/b' and posted_meta[-1]['p'] == 1, (posted[-1], posted_meta[-1])
+    assert not errors
+
+    # A long multi-line post with emoji, blank lines, a link and hashtags keeps its lines.
+    long_post = (
+        "NĂNG LỰC CỦA DOANH NGHIỆP CÓ ĐANG ĐƯỢC THỂ HIỆN XỨNG ĐÁNG TRÊN WEBSITE?🔍\n"
+        "Gửi đường link website cho một khách hàng mới, phải nhắn thêm: “Bên mình còn làm nhiều hơn thế”?\n"
+        "Doanh nghiệp đã có thêm dự án, đội ngũ lớn hơn.\n\n"
+        "💬Thử mở lại website của mình, khách đã có đủ lý do để bắt đầu một cuộc trò chuyện chưa?\n"
+        "-----------------\n"
+        "Connect Tech - Web Design Agency\n"
+        "📍 Địa chỉ: 965/36/9 Quang Trung, TP. Hồ Chí Minh\n"
+        "🌐 Website: https://connecttech.vn\n"
+        "☎️ Hotline: 077 317 5996\n"
+        "#connecttech #thietkewebsite #webdesign"
+    )
+    new_post_campaign('Smoke bài nhiều dòng', long_post, 'Mock One')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    got = posted_meta[-1]['i'].replace('\r\n', '\n').strip()
+    print('multi-line sent lines:', len(got.split('\n')), 'expected:', len(long_post.split('\n')))
+    assert got == long_post, (got, long_post)
+    assert not errors
+
+    # An editor that loses line breaks: the post fails and nothing is sent as one block.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mocklostbreaks | Mock LostBreaks')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock LostBreaks')")
+    count = len(posted)
+    new_post_campaign('Smoke mất xuống dòng', 'Dòng một\nDòng hai\n\nDòng ba', 'Mock LostBreaks')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    wait_for_log('không giữ được xuống dòng')
+    pg.wait_for_selector('.badge--halted, .badge--done, .badge--paused', timeout=120000)
+    assert len(posted) == count, f"a post with lost line breaks was sent: {posted[count:]}"
+    assert not errors
+
+    # An editor that keeps lines only for a paste: the post goes out once, with its lines, and is not entered twice.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mockpasteonly | Mock PasteOnly')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock PasteOnly')")
+    count = len(posted)
+    short_post = 'Dòng một dài đủ để kiểm tra\nDòng hai\n\nDòng ba'
+    new_post_campaign('Smoke chỉ dán', short_post, 'Mock PasteOnly')
+    pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
+    pg.wait_for_selector('.badge--done', timeout=120000)
+    assert len(posted) == count + 1, posted[count:]
+    assert posted_meta[-1]['i'].strip() == short_post, posted_meta[-1]['i']
+    assert not errors
+
     # Overview: today's numbers are filled in and the notification option can be switched on.
     pg.click("button:text-is('Tổng quan')")
     pg.wait_for_selector('text=Tỉ lệ thành công')
@@ -193,8 +326,8 @@ with sync_playwright() as p:
     assert not errors
     # Backup: export, wipe the local data, import the file, and check the counts. Schedules come back switched off.
     keys = "['groups','campaigns','logs']"
-    before = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
-    assert before['scheduled'] >= 1, before
+    before = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, images: d.campaigns.reduce((n, c) => n + (c.images ? c.images.length : 0), 0), preview: d.campaigns.filter(c => c.removeLinkPreview).length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
+    assert before['scheduled'] >= 1 and before['images'] == 3 and before['preview'] == 1, before
     pg.click("button:text-is('Sao lưu')")
     with pg.expect_download() as download:
         pg.click("button:text-is('Xuất bản sao lưu')")
@@ -208,7 +341,8 @@ with sync_playwright() as p:
     assert "Lịch sẽ được tắt khi nhập" in pg.locator('.backup__preview').inner_text()
     pg.click("button:text-is('Nhập dữ liệu')")
     pg.wait_for_selector("text=Đã nhập")
-    after = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
+    after = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, images: d.campaigns.reduce((n, c) => n + (c.images ? c.images.length : 0), 0), preview: d.campaigns.filter(c => c.removeLinkPreview).length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
+    assert after['images'] == before['images'] and after['preview'] == before['preview'], (before, after)
     assert after['groups'] == before['groups'] and after['campaigns'] == before['campaigns'], (before, after)
     assert after['logs'] >= before['logs'] and after['scheduled'] == 0, (before, after)
     # Importing the same file again adds nothing.
