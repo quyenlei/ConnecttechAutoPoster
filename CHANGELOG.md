@@ -4,7 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
-Patch versions 0.2.1–0.2.18 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here until the next release is cut.
+## [0.4.0] - 2026-11-09
+
+Patch versions 0.2.1–0.2.20 were build counters (each `pnpm build` increments the patch), not separate releases, so everything since 0.2.0 is listed here.
+
+Note: `pnpm build` raises the patch number in `package.json` on every run. Reset it to the released version before committing.
 
 ### Verified
 - The owner ran the extension by hand on live Facebook and confirmed it works. This was a manual check; individual items below marked "unverified" were not itemized in that check.
