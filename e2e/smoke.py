@@ -137,7 +137,8 @@ srv.socket = sslctx.wrap_socket(srv.socket, server_side=True)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 with sync_playwright() as p:
-    ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=False,
+    # Headless by default (new headless mode loads extensions and renders pages); E2E_HEADED=1 shows the browser.
+    ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=os.environ.get('E2E_HEADED') != '1',
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
               "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
@@ -428,7 +429,11 @@ with sync_playwright() as p:
     pg.click("button:text-is('Tổng quan')")
     pg.wait_for_selector('text=Tỉ lệ thành công')
     assert pg.locator('.overview__stat-value').first.inner_text() != '0', "today's sent count should not be 0"
-    pg.check("label:has-text('Thông báo trên máy') input")
+    # The checkbox is controlled by stored settings: it re-renders shortly after the storage write, so wait for that.
+    box = "label:has-text('Thông báo trên máy') input"
+    pg.click(box)
+    pg.wait_for_function("() => chrome.storage.local.get('settings').then(d => d.settings && d.settings.notifyOnFinish === true)", timeout=10000)
+    pg.wait_for_selector(box + ':checked', timeout=10000)
     assert not errors
     # Backup: export, wipe the local data, import the file, and check the counts. Schedules come back switched off.
     keys = "['groups','campaigns','logs']"

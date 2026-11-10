@@ -28,7 +28,8 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Comment campaigns: when no post can be used, the log now says how many posts were seen on the page versus how many were identified within 24 hours. Unit tests and typecheck pass; not yet checked on live Facebook.
 
 ### Fixed
-- Dashboard views could show an outdated value: when a setting changed right after a view opened (for example ticking "Thông báo trên máy" at once), the first storage read could arrive later with the older value and overwrite the change on screen. `useItem` now ignores that first read once a change has arrived.
+- Dashboard views could show an outdated value: when a setting changed right after a view opened (for example ticking "Thông báo trên máy" at once), the first storage read could arrive later with the older value and overwrite the change on screen. `useItem` now ignores that first read once a change has arrived. Found while investigating an e2e failure; that failure itself was the test checking the box before React re-rendered, now fixed by waiting for it.
+- `e2e/smoke.py` runs headless by default (new headless mode loads the extension and renders pages); set `E2E_HEADED=1` to watch it.
 
 ### Known limitations
 - **Newest-posts mode, live result (2026-11-09, two groups): one comment sent, one group sent nothing because none of its first 8 feed items had a comment editor yet. Landing on the right post is not confirmed. Next steps are in `docs/ROADMAP.md`.**
