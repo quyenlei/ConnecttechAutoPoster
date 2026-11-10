@@ -2,6 +2,19 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.4] - 2026-11-10
+
+### Changed
+- **A run started from the chat box runs in that tab.** The Facebook tab where **Chạy** was pressed is navigated from group to group, for comment and post campaigns alike; no tab or window is opened and the tab is never closed (it stays on the last group). Pause, Stop and Continue keep using it. If the user closes it during the run, CAP falls back to opening its own tab. Runs started from the dashboard tab or by the daily schedule open their own tab as before. The confirmation says the tab will be used. Checked on the local mock (2 posts in the same tab, no tab opened); not yet seen on live Facebook.
+
+## [0.6.3] - 2026-11-10
+
+### Added
+- **Chat box on Facebook.** A round button in the bottom-right corner of every facebook.com page opens a small Messenger-style window: run status with pause/resume/stop, the latest 40 log entries as messages (sent posts and comments on the right), and a campaign picker with a **Chạy** button. The title bar can minimise it to a bar, expand it to the full dashboard inside the same window, or close it. Open/minimised/expanded is remembered in `local:chatbox` and shared by all Facebook tabs. The window is a shadow root outside `<body>` that frames the extension's own `chatbox.html` / `options.html` (now web-accessible for facebook.com only); it loads only once opened. Display only: it reads nothing from the page and clicks nothing. No permission or host was added. Checked on the local mock (which sends a `frame-src` CSP like Facebook); not yet seen on live Facebook. Replaces the side panel briefly built in 0.6.2.
+
+### Changed
+- Smoke test: every wait between run steps is skipped by a test-only script in the test's extension pages (it moves the stored `nextAt` to now). The extension itself is unchanged. The Stop/Continue step still uses the real 30 s wait, and the daily schedule step still waits for the real clock minute.
+
 ## [0.6.1] - 2026-11-10
 
 ### Changed

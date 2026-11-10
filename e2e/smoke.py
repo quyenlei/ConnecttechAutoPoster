@@ -126,7 +126,7 @@ class H(http.server.BaseHTTPRequestHandler):
         else:
             page_loads.append(urllib.parse.urlparse(self.path).path)
             body, ctype = MOCK.encode(), 'text/html; charset=utf-8'
-        self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+        self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Security-Policy', "frame-src 'self'"); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
 
 tmp = tempfile.mkdtemp()
@@ -483,6 +483,46 @@ with sync_playwright() as p:
     pg.wait_for_selector("text=Xem trước:")
     pg.click("button:text-is('Nhập dữ liệu')")
     pg.wait_for_selector("text=Đã nhập 0 nhóm, 0 chiến dịch, 0 dòng nhật ký")
+    # The chat box on a Facebook page (not only group pages): a round button opens a small window with the run
+    # status, recent activity and a start button; it expands to the full dashboard in place, minimises and closes.
+    # The mock sends a frame-src CSP like Facebook does; the extension pages must still load in the window.
+    fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: d.accept()); fb.goto('https://www.facebook.com/')
+    fb.click('cap-chat-host .cap-chat__launcher')
+    chat = fb.frame_locator('cap-chat-host iframe')
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    assert chat.locator('.chatbox__message').count() > 0, 'activity feed is empty'
+    fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
+    fb.click("cap-chat-host button[aria-label='Mở rộng']")
+    chat.locator("button:text-is('Chiến dịch')").wait_for(timeout=15000)
+    fb.click("cap-chat-host button[aria-label='Thu gọn']")
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    fb.click("cap-chat-host button[aria-label='Thu nhỏ']")
+    assert not fb.locator('cap-chat-host iframe').is_visible(), 'minimised window must hide its content'
+    fb.click("cap-chat-host button[aria-label='Mở lại Auto Poster']")
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    # Started from the chat box, a run uses this very tab: it moves from group to group and no tab is opened.
+    opened = []
+    ctx.on('page', lambda page: opened.append(page))
+    before = len(posted)
+    chat.locator('#chatbox-campaign').select_option(label='Smoke (đăng bài)')
+    chat.locator("button:text-is('Chạy')").click()
+    chat.locator('.badge--running, .chatbox__error').first.wait_for(timeout=15000)
+    assert chat.locator('.chatbox__error').count() == 0, chat.locator('.chatbox__error').inner_text()
+    deadline = time.time() + 120
+    while len(posted) < before + 2 and time.time() < deadline: time.sleep(1)
+    assert posted[before:] == ['Hello A', 'Hello B'], posted[before:]
+    assert not opened, f"a run started from the chat box opened {len(opened)} tab(s)"
+    try:
+        fb.wait_for_url('**/groups/mock2/**', timeout=10000)
+    except Exception:
+        print('chat run tab url:', fb.url, '| pages:', [p.url for p in ctx.pages])
+        raise
+    fb.locator('cap-chat-host .cap-chat__window').wait_for()  # the chat box is back after each page load
+    chat.locator('.badge--done').wait_for(timeout=60000)
+    assert not fb.is_closed(), 'the user\'s tab must stay open after the run'
+    fb.click("cap-chat-host button[aria-label='Đóng']")
+    assert fb.locator('cap-chat-host .cap-chat__launcher').is_visible(), 'launcher must come back after closing'
+    fb.close()
     assert not errors
     print("SMOKE OK")
     ctx.close()

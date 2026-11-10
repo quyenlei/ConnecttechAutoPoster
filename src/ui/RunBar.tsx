@@ -5,7 +5,8 @@ import { campaignsItem, runItem } from '@/lib/storage';
 import { sendCommand, useItem, useNow } from './hooks';
 import { RUN_STATUS_LABEL } from './labels';
 
-export function RunBar() {
+/** `compact`: smaller padding, for the chat box on Facebook pages. */
+export function RunBar({ compact = false }: { compact?: boolean }) {
   const run = useItem(runItem);
   const campaigns = useItem(campaignsItem);
   const now = useNow(run?.status === 'running');
@@ -29,7 +30,7 @@ export function RunBar() {
   }
 
   return (
-    <section className="card" aria-label="Trạng thái chạy">
+    <section className={compact ? 'card card--compact' : 'card'} aria-label="Trạng thái chạy">
       <div className="runbar">
         <div className="runbar__text">
           <span className={`badge badge--${run.status}`}>{RUN_STATUS_LABEL[run.status]}</span>{' '}

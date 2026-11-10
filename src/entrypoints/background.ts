@@ -17,9 +17,9 @@ const ALARM = 'cap-next-post';
 const SCHEDULE_ALARM = 'cap-schedule';
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (r: CommandReply) => void) => {
+  browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r: CommandReply) => void) => {
     if (!isRunCommand(message)) return false;
-    handleCommand(message).then(sendResponse, (e: unknown) => sendResponse({ ok: false, error: String(e) }));
+    handleCommand(message, facebookTabOf(sender)).then(sendResponse, (e: unknown) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   });
 
@@ -124,8 +124,18 @@ async function disableAllSchedules(campaignId: string): Promise<void> {
   await log(campaignId, null, 'info', 'Đã tắt toàn bộ lịch chạy vì Facebook yêu cầu kiểm tra hoặc chặn. Hãy bật lại sau khi xử lý xong trên Facebook.');
 }
 
-/** Shared by the Start button and the daily schedule. */
-async function startRun(campaignId: string): Promise<CommandReply> {
+/** The Facebook tab a command came from (the chat box is framed in one); undefined from the dashboard tab. */
+function facebookTabOf(sender: { tab?: { id?: number; windowId?: number; url?: string } }): { tabId: number; windowId: number } | undefined {
+  const tab = sender.tab;
+  if (tab?.id === undefined || tab.windowId === undefined || !/^https:\/\/([a-z0-9-]+\.)?facebook\.com\//.test(tab.url ?? '')) return undefined;
+  return { tabId: tab.id, windowId: tab.windowId };
+}
+
+/**
+ * Shared by the Start button and the daily schedule. Started from the chat box, the run uses the Facebook tab
+ * the user is on; otherwise (dashboard tab, schedule) it opens its own tab as before.
+ */
+async function startRun(campaignId: string, here?: { tabId: number; windowId: number }): Promise<CommandReply> {
   const run = await runItem.getValue();
   if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
   const campaign = (await campaignsItem.getValue()).find((c) => c.id === campaignId);
@@ -134,6 +144,7 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
   await closeCommentWindow();
+  await commentTabItem.setValue(here ? { ...here, groupId: '', runStartedAt: state.startedAt ?? 0, keepOpen: true } : null);
   await runItem.setValue(state);
   await log(campaign.id, null, 'info', campaign.mode === 'comment'
     ? `Đã bắt đầu chạy: tối đa ${state.total} lượt bình luận trên ${campaign.groupIds.length} nhóm.`
@@ -142,11 +153,11 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   return { ok: true };
 }
 
-async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
+async function handleCommand(cmd: RunCommand, here?: { tabId: number; windowId: number }): Promise<CommandReply> {
   const run = await runItem.getValue();
   switch (cmd.type) {
     case 'cap/run/start':
-      return startRun(cmd.campaignId);
+      return startRun(cmd.campaignId, here);
     case 'cap/run/pause': {
       await runItem.setValue(pause(run));
       await schedule(null);
@@ -199,6 +210,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);
       await closeCommentWindow();
+      await commentTabItem.setValue(null);
       return { ok: true };
     }
   }
@@ -246,7 +258,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign) : await postToGroup(group, text, campaign)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign) : await postToGroup(group, text, campaign, run)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -375,15 +387,30 @@ async function fetchJoinedGroups(): Promise<void> {
   }
 }
 
-async function postToGroup(group: Group, template: string, campaign: Campaign): Promise<PostOutcome> {
+/** The user's own tab this run was started from, while it is still open. */
+async function ownRunTab(run: RunState): Promise<number | undefined> {
+  const saved = await commentTabItem.getValue();
+  if (!saved?.keepOpen || saved.runStartedAt !== run.startedAt) return undefined;
+  return (await browser.tabs.get(saved.tabId).catch(() => null)) ? saved.tabId : undefined;
+}
+
+async function postToGroup(group: Group, template: string, campaign: Campaign, run: RunState): Promise<PostOutcome> {
   let tabId: number | undefined;
+  // Started from the chat box: post in the user's own tab, which is navigated and never closed.
+  const own = await ownRunTab(run);
   // Until the page has loaded nothing can have been submitted, so a failure up to that point is safe to retry.
   let loaded = false;
   try {
-    const tab = await browser.tabs.create({ url: group.url, active: false });
-    tabId = tab.id;
-    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.', retryable: true };
-    await waitForTab(tabId);
+    if (own !== undefined) {
+      tabId = own;
+      await browser.tabs.update(own, { url: group.url });
+      await waitForTab(own, group.url);
+    } else {
+      const tab = await browser.tabs.create({ url: group.url, active: false });
+      tabId = tab.id;
+      if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.', retryable: true };
+      await waitForTab(tabId);
+    }
     loaded = true;
     if (hasPlaceholderName(group)) {
       const found = await askGroupName(tabId);
@@ -408,7 +435,7 @@ async function postToGroup(group: Group, template: string, campaign: Campaign): 
   } catch (e) {
     return { kind: 'failed', reason: e instanceof Error ? e.message : String(e), ...(loaded ? {} : { retryable: true }) };
   } finally {
-    if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
+    if (tabId !== undefined && tabId !== own) await browser.tabs.remove(tabId).catch(() => undefined);
   }
 }
 
@@ -462,7 +489,8 @@ async function openGroupFeed(group: Group, run: RunState): Promise<number> {
 /** Closes the comment tab, if one is open, and shows the user's previous tab again. Never throws. */
 async function closeCommentWindow(): Promise<void> {
   const saved = await commentTabItem.getValue();
-  if (!saved) return;
+  // The user's own tab stays open and stays the run's tab, so Continue after Stop or Pause keeps using it.
+  if (!saved || saved.keepOpen) return;
   await commentTabItem.setValue(null);
   await closeVisibleTab(saved.tabId, saved.returnTabId);
 }

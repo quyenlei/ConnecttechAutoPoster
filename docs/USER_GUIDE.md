@@ -51,11 +51,14 @@ Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 5. **Lưu chiến dịch** (Save campaign) or **Lưu và chạy** (Save and launch).
 
 ## 3. Run
+
+**Hộp chat trên Facebook:** trên mọi trang Facebook có một nút tròn màu xanh ở góc dưới bên phải. Bấm vào để mở hộp chat Auto Poster: trạng thái lượt chạy (Tạm dừng / Tiếp tục / Dừng), các hoạt động mới nhất hiện như tin nhắn, và ô chọn chiến dịch với nút **Chạy**. Trên thanh tiêu đề: nút mũi tên mở rộng để xem cài đặt đầy đủ ngay trong hộp, nút gạch ngang để thu nhỏ, nút X để đóng. Trạng thái mở/thu nhỏ được nhớ ở mọi tab Facebook.
 The run bar is visible on every tab.
 - The first post is sent immediately; waits apply between posts.
 - **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
-- CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
+- **Chạy từ hộp chat:** CAP chạy ngay trên tab Facebook bạn đang đứng. Tab tự chuyển qua từng nhóm để đăng bài hoặc bình luận, không mở tab mới và không đóng khi xong. Đừng bấm vào trang trong lúc đang chạy.
+- Chạy từ bảng điều khiển (tab riêng) hoặc theo lịch: CAP tự mở tab cho từng nhóm (đăng bài: tab nền, đóng sau khi đăng; bình luận: một tab hiển thị).
 - **Chạy tiếp**: after you press **Dừng**, a button **Chạy tiếp N nhóm còn lại** appears. It asks first, waits a fresh random delay, and skips groups that already have a posted or pending entry in that run (for example a post that went out just as you pressed Stop). It does not appear after a checkpoint/block. **Lưu và chạy** always starts from the first group again.
 - If a group fails before anything is sent (page did not load, composer not found), CAP tries the same group once more after 8 seconds; the log shows "Lỗi tạm thời, thử lại sau 8 giây". Failures that might have been submitted are never retried.
 - If Facebook holds the post for admin approval, the log shows **Chờ duyệt**. This counts as sent. Detection is not verified on live Facebook, so a pending post may still appear as **Đã đăng**.

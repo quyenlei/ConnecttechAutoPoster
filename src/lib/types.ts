@@ -100,6 +100,11 @@ export interface CommentTab {
   groupId: string;
   /** `RunState.startedAt` of the run that opened it; another run never reuses it. */
   runStartedAt: number;
+  /**
+   * The user's own Facebook tab the run was started from (the chat box). The run navigates it from group to
+   * group and never closes it; post campaigns post in it too instead of opening background tabs.
+   */
+  keepOpen?: boolean;
 }
 
 /** Result of the last "Lấy danh sách nhóm đã tham gia". Only a preview: nothing is added until the user chooses. */
