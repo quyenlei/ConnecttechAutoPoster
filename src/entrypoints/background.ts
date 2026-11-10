@@ -3,13 +3,13 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { validateImages, totalImageBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
-import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest } from '@/lib/messages';
+import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
 import { appendLog, campaignsItem, groupsItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
-import { hasPlaceholderName, recentActivityGroupUrl, withReadName } from '@/lib/groups';
+import { hasPlaceholderName, newestPostsGroupUrl, recentActivityGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
@@ -177,6 +177,7 @@ function validateCampaign(c: Campaign, all: Campaign[]): string | null {
   if (c.mode === 'comment' && (!Number.isInteger(c.commentsPerGroup) || (c.commentsPerGroup ?? 0) < 1 || (c.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) return 'Số bài mỗi nhóm không hợp lệ.';
   if (!c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
   if (c.variations.some((v) => v.length > LIMITS.maxPostLength)) return 'Bài đăng quá dài.';
+  if (c.commentNewestPosts && (c.mode !== 'comment' || (c.commentsPerGroup ?? 0) > LIMITS.maxNewestPostComments)) return `Chế độ bài mới nhất chỉ dùng cho chiến dịch bình luận, tối đa ${LIMITS.maxNewestPostComments} bài mỗi nhóm.`;
   if (c.mode !== 'comment' && c.images?.length) {
     const otherBytes = all.filter((o) => o.id !== c.id).reduce((sum, o) => sum + totalImageBytes(o.images ?? []), 0);
     return validateImages(c.images, otherBytes);
@@ -207,7 +208,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run) : await postToGroup(group, text, campaign)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign.commentNewestPosts === true) : await postToGroup(group, text, campaign)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -338,16 +339,17 @@ async function postToGroup(group: Group, template: string, campaign: Campaign): 
   }
 }
 
-async function commentInGroup(group: Group, text: string, run: RunState): Promise<PostOutcome> {
+async function commentInGroup(group: Group, text: string, run: RunState, newest: boolean): Promise<PostOutcome> {
   let tabId: number | undefined;
   try {
     const slot = `slot:${run.campaignId}:${run.startedAt}:${run.attempted}`;
     const history = Object.fromEntries(Object.entries(await commentedPostsItem.getValue()).filter(([key, at]) => !key.startsWith('slot:') || at > Date.now() - 7 * 86400_000));
     if (history[slot]) return { kind: 'skipped', reason: 'Lượt bình luận đã được xử lý trước khi gián đoạn.' };
-    const tab = await browser.tabs.create({ url: recentActivityGroupUrl(group.id), active: false });
+    const tab = await browser.tabs.create({ url: newest ? newestPostsGroupUrl(group.id) : recentActivityGroupUrl(group.id), active: false });
     tabId = tab.id;
     if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.' };
     await waitForTab(tabId);
+    if (newest) return await commentOnNewestPost(tabId, group.id, text, run, history, slot);
     const request: DiscoverRequest = { type: 'cap/discover-posts', groupId: group.id };
     const found = (await sendWithRetry(tabId, request)) as DiscoverReply;
     if (found.problem) return found.problem;
@@ -374,6 +376,31 @@ async function commentInGroup(group: Group, text: string, run: RunState): Promis
   }
 }
 
+/**
+ * Opt-in "newest posts" mode: the age of a post is unknown, so only the first few posts of the feed
+ * (sorted by newest) are used. The post is remembered by a fingerprint and reserved before typing.
+ */
+async function commentOnNewestPost(tabId: number, groupId: string, text: string, run: RunState, history: Record<string, number>, slot: string): Promise<PostOutcome> {
+  const prefix = `feed:${groupId}:`;
+  const skip = Object.keys(history).filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length));
+  const pickRequest: FeedPickRequest = { type: 'cap/feed-pick', skip };
+  const pick = (await sendWithRetry(tabId, pickRequest)) as FeedPickReply;
+  if (pick.problem) return pick.problem;
+  if (!pick.fingerprint) return { kind: 'skipped', skipRemainingGroup: true, reason: `Không có bài mới nào chưa thử trong feed. ${pick.diagnostic ?? ''}`.trim() };
+  const latest = await runItem.getValue();
+  if (latest.status !== 'running' || latest.startedAt !== run.startedAt || latest.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
+  const now = Date.now();
+  await commentedPostsItem.setValue({ ...history, [`${prefix}${pick.fingerprint}`]: now, [slot]: now });
+  const comment: FeedCommentRequest = { type: 'cap/feed-comment', text };
+  const outcome = (await withTimeout(browser.tabs.sendMessage(tabId, comment), LIMITS.postTimeoutMs, 'Hết thời gian chờ bình luận.')) as PostOutcome;
+  // `retryable` means nothing was sent, so the post goes back to the pool instead of staying reserved.
+  if (outcome.kind === 'failed' && outcome.retryable) {
+    const { [`${prefix}${pick.fingerprint}`]: _released, ...rest } = await commentedPostsItem.getValue();
+    await commentedPostsItem.setValue(rest);
+  }
+  return outcome;
+}
+
 function waitForTab(tabId: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => done(new Error('Trang nhóm tải quá lâu.')), LIMITS.tabLoadTimeoutMs);
@@ -391,7 +418,7 @@ function waitForTab(tabId: number): Promise<void> {
 }
 
 /** The content script may not be ready the instant the tab reports complete. */
-async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | DiscoverRequest | CommentRequest): Promise<unknown> {
+async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | DiscoverRequest | CommentRequest | FeedPickRequest): Promise<unknown> {
   let lastError: unknown;
   for (let i = 0; i < 8; i++) {
     try {

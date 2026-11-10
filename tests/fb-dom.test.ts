@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findCommentTextbox, findCommentButton, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findNewestFeedPosts, postFingerprint, findCommentTextbox, findCommentButton, describeCommentButtons, pressEnter, describeFeedItems, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -335,4 +335,71 @@ describe('fb-dom: duplicated or multi-line text checks', () => {
     expect(hasLineBreaks('A\n')).toBe(false);
     expect(hasLineBreaks('\n\nA')).toBe(false);
   });
+});
+
+describe('newest feed posts', () => {
+  const item = (author: string, body: string, editors = 1) =>
+    `<div><div dir="auto">${body}</div><div role="button" aria-label="Bình luận về bài viết của ${author}">Bình luận</div>` +
+    '<div role="textbox" contenteditable="true" aria-label="Viết bình luận"></div>'.repeat(editors) + '</div>';
+
+  it('finds feed items that have exactly one comment editor, in page order', () => {
+    document.body.innerHTML = `<div role="feed"><div></div>${item('Lan', 'Bài một')}${item('Minh', 'Bài hai')}</div>`;
+    const found = findNewestFeedPosts(document);
+    expect(found).toHaveLength(2);
+    expect(found[0]!.fingerprint).toBe(postFingerprint('Lan', 'Bài một'));
+    expect(found[1]!.fingerprint).toBe(postFingerprint('Minh', 'Bài hai'));
+  });
+
+  it('reads the author from the label even when it ends with a comment count', () => {
+    document.body.innerHTML = `<div role="feed">${item('Em Anth, 1 bình luận', 'Nội dung')}</div>`;
+    expect(findNewestFeedPosts(document)[0]!.fingerprint).toBe(postFingerprint('Em Anth', 'Nội dung'));
+  });
+
+  it('skips items without an editor, with several editors, or without a comment button', () => {
+    document.body.innerHTML = `<div role="feed">${item('A', 'x', 0)}${item('B', 'y', 2)}<div><div dir="auto">z</div><div contenteditable="true"></div></div></div>`;
+    expect(findNewestFeedPosts(document)).toEqual([]);
+  });
+
+  it('only looks at the first items of the feed', () => {
+    document.body.innerHTML = `<div role="feed">${'<div></div>'.repeat(8)}${item('Late', 'too far down')}</div>`;
+    expect(findNewestFeedPosts(document)).toEqual([]);
+  });
+
+  it('returns nothing when the page has no feed', () => {
+    document.body.innerHTML = item('Lan', 'x');
+    expect(findNewestFeedPosts(document)).toEqual([]);
+  });
+
+  it('gives different posts different fingerprints without containing the text', () => {
+    expect(postFingerprint('Lan', 'a')).not.toBe(postFingerprint('Lan', 'b'));
+    expect(postFingerprint('Lan', 'Cần mua laptop cũ')).toMatch(/^[0-9a-z]{1,8}$/);
+  });
+});
+
+it('finds the send button next to a feed editor and ignores the action-bar comment button', () => {
+  document.body.innerHTML = '<div role="feed"><div role="article"><div role="button" aria-label="Bình luận"></div><div><div role="textbox" contenteditable="true" aria-label="Viết bình luận"></div><div role="button" aria-label="Bình luận" id="send"></div></div></div></div>';
+  const textbox = document.querySelector<HTMLElement>('[role="textbox"]')!;
+  expect(findCommentButton(textbox)?.id).toBe('send');
+  expect(describeCommentButtons(textbox)).toContain('Bình luận');
+});
+
+it('explains why feed items were rejected', () => {
+  document.body.innerHTML = '<div role="feed"><div><div contenteditable="true"></div><div role="button" aria-label="Bình luận"></div><div dir="auto">Xin chào</div></div><div></div></div>';
+  expect(describeFeedItems(document)).toBe('#1: ô=1, nút bình luận=1, chữ=có; #2: ô=0, nút bình luận=0, chữ=không');
+});
+
+it('gives posts by one author different fingerprints even when the text has no leaf element', () => {
+  const post = (text: string) => `<div><div role="button" aria-label="Bình luận về bài viết của Em Anth"></div><div contenteditable="true"></div><div dir="auto"><div>${text}</div></div></div>`;
+  document.body.innerHTML = `<div role="feed">${post('Bài một')}${post('Bài hai')}</div>`;
+  const [a, b] = findNewestFeedPosts(document);
+  expect(a!.fingerprint).not.toBe(b!.fingerprint);
+});
+
+it('presses Enter as keydown, keypress and keyup', () => {
+  document.body.innerHTML = '<div id="box" contenteditable="true"></div>';
+  const seen: string[] = [];
+  const box = document.getElementById('box')!;
+  for (const type of ['keydown', 'keypress', 'keyup']) box.addEventListener(type, (e) => seen.push(`${e.type}:${(e as KeyboardEvent).key}`));
+  pressEnter(box);
+  expect(seen).toEqual(['keydown:Enter', 'keypress:Enter', 'keyup:Enter']);
 });

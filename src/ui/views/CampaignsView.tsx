@@ -134,6 +134,10 @@ export function CampaignsView() {
       setMessage({ text: 'Hãy dừng lượt chạy trước khi sửa chiến dịch này.', danger: true });
       return null;
     }
+    if (draft.mode === 'comment' && draft.commentNewestPosts && (draft.commentsPerGroup ?? 0) > LIMITS.maxNewestPostComments) {
+      setMessage({ text: `Chế độ bài mới nhất chỉ cho tối đa ${LIMITS.maxNewestPostComments} bài mỗi nhóm.`, danger: true });
+      return null;
+    }
     if (draft.mode === 'comment' && (!Number.isInteger(draft.commentsPerGroup) || (draft.commentsPerGroup ?? 0) < 1 || (draft.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) {
       setMessage({ text: `Số bài mỗi nhóm phải từ 1 đến ${LIMITS.maxCommentsPerGroup}.`, danger: true });
       return null;
@@ -147,12 +151,13 @@ export function CampaignsView() {
       setMessage({ text: imageProblem, danger: true });
       return null;
     }
-    const { images: _images, removeLinkPreview: _preview, ...base } = draft;
+    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, ...base } = draft;
     const clean: Campaign = {
       ...base,
       // Images and the link preview option only apply to post campaigns.
       ...(isPost && images.length > 0 ? { images } : {}),
       ...(isPost && draft.removeLinkPreview ? { removeLinkPreview: true } : {}),
+      ...(!isPost && draft.commentNewestPosts ? { commentNewestPosts: true } : {}),
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
       variations: draft.variations.filter((v) => v.trim()).length ? draft.variations.filter((v) => v.trim()) : [''],
       delay: {
@@ -228,8 +233,15 @@ export function CampaignsView() {
             {draft.mode === 'comment' && (
               <div className="field">
                 <label className="field__label" htmlFor="c-comment-limit">Số bài tối đa mỗi nhóm</label>
-                <input id="c-comment-limit" className="field__control" type="number" min={1} max={LIMITS.maxCommentsPerGroup} value={draft.commentsPerGroup ?? 5} onChange={(e) => patch({ commentsPerGroup: num(e.target.value) })} />
-                <span className="field__hint">Chỉ xét bài có thời gian đăng xác định được trong 24 giờ qua. Bài đã xử lý sẽ không tự thử lại.</span>
+                <input id="c-comment-limit" className="field__control" type="number" min={1} max={draft.commentNewestPosts ? LIMITS.maxNewestPostComments : LIMITS.maxCommentsPerGroup} value={draft.commentsPerGroup ?? 5} onChange={(e) => patch({ commentsPerGroup: num(e.target.value) })} />
+                <span className="field__hint">{draft.commentNewestPosts
+                  ? 'Chế độ bài mới nhất: bình luận các bài đầu tiên của nhóm, không kiểm tra được giờ đăng.'
+                  : 'Chỉ xét bài có thời gian đăng xác định được trong 24 giờ qua. Bài đã xử lý sẽ không tự thử lại.'}</span>
+                <label className="campaigns__group">
+                  <input type="checkbox" checked={draft.commentNewestPosts === true} onChange={(e) => patch({ commentNewestPosts: e.target.checked, ...(e.target.checked ? { commentsPerGroup: Math.min(draft.commentsPerGroup ?? 5, LIMITS.maxNewestPostComments) } : {}) })} />
+                  Bình luận các bài mới nhất, không cần biết giờ đăng
+                </label>
+                <span className="field__hint">Dùng khi Facebook không cho biết giờ đăng. Tối đa {LIMITS.maxNewestPostComments} bài mỗi nhóm. Bài đầu nhóm có thể là bài ghim hoặc bài cũ, nên hãy tự kiểm tra trước. Bài đã bình luận sẽ không bình luận lặp.</span>
               </div>
             )}
 

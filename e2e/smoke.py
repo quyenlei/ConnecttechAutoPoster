@@ -11,11 +11,20 @@ MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</titl
 setTimeout(()=>{
   if (location.pathname.split('/')[2] === 'mockempty') return; // a group with no recent post
   const article=document.createElement('article'); article.setAttribute('role', 'article');
-  article.innerHTML='<time id="published"></time><a id="post-link">Bài viết</a><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button aria-label="Post comment" id="send-comment">Gửi</button>';
-  document.body.appendChild(article);
-  document.getElementById('published').setAttribute('datetime', new Date().toISOString());
-  document.getElementById('post-link').href = '/groups/' + location.pathname.split('/')[2] + '/posts/123/';
-  document.getElementById('send-comment').onclick=()=>{ const el=document.getElementById('comment'); fetch('/__comment?t='+encodeURIComponent(el.textContent)); const result=document.createElement('div'); result.dir='auto'; result.textContent=el.textContent; article.appendChild(result); el.textContent=''; };
+  const feedOnly = location.pathname.split('/')[2] === 'mockfeed'; // newest-posts mode: a feed with no post link, time or article role
+  let host = article;
+  if (feedOnly) {
+    host = document.createElement('div');
+    host.innerHTML='<div dir="auto">Bài không có liên kết</div><div role="button" aria-label="Bình luận về bài viết của Lan, 1 bình luận">Bình luận</div><form><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button type="button" aria-label="Post comment" id="send-comment">Gửi</button></form>';
+    const feed = document.createElement('div'); feed.setAttribute('role', 'feed'); feed.appendChild(document.createElement('div')); feed.appendChild(host);
+    document.body.appendChild(feed);
+  } else {
+    article.innerHTML='<time id="published"></time><a id="post-link">Bài viết</a><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button aria-label="Post comment" id="send-comment">Gửi</button>';
+    document.body.appendChild(article);
+    document.getElementById('published').setAttribute('datetime', new Date().toISOString());
+    document.getElementById('post-link').href = '/groups/' + location.pathname.split('/')[2] + '/posts/123/';
+  }
+  document.getElementById('send-comment').onclick=()=>{ const el=document.getElementById('comment'); fetch('/__comment?t='+encodeURIComponent(el.textContent)); const result=document.createElement('div'); result.dir='auto'; result.textContent=el.textContent; host.appendChild(result); el.textContent=''; };
 }, 2000);
 document.getElementById('open').onclick=()=>{
   const d=document.createElement('div'); d.setAttribute('role','dialog');
@@ -64,7 +73,7 @@ class H(http.server.BaseHTTPRequestHandler):
             comments.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
             body, ctype = b'ok', 'text/plain'
         else:
-            body, ctype = MOCK.encode(), 'text/html'
+            body, ctype = MOCK.encode(), 'text/html; charset=utf-8'
         self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
 
@@ -150,7 +159,7 @@ with sync_playwright() as p:
     assert comments == ['Bình luận thử'], comments
     assert not errors
 
-    def run_comment_campaign(name, group_label):
+    def run_comment_campaign(name, group_label, newest=False):
         pg.click("button:has-text('Chiến dịch')")
         pg.click("button:has-text('Tạo mới')")
         pg.fill('#c-name', name)
@@ -158,6 +167,7 @@ with sync_playwright() as p:
         pg.fill('#c-comment-limit', '1')
         pg.fill('#c-var-0', 'Bình luận thử')
         pg.check(f"label:has-text('{group_label}') input")
+        if newest: pg.check('text=Bình luận các bài mới nhất')
         pg.click("button:has-text('Lưu và chạy')")
         pg.wait_for_selector('text=Đã bắt đầu chiến dịch bình luận.')
 
@@ -181,6 +191,19 @@ with sync_playwright() as p:
     run_comment_campaign('Smoke bình luận trống', 'Mock Empty')
     wait_for_log('Không xác định được bài phù hợp trong 24 giờ')
     assert comments == ['Bình luận thử'], f"comment sent without an eligible post: {comments}"
+    assert not errors
+
+    # Newest-posts mode: a feed post with no link, time or ID is commented once; a second run finds it already tried.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mockfeed | Mock Feed')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Feed')")
+    run_comment_campaign('Smoke bình luận feed', 'Mock Feed', newest=True)
+    deadline = time.time() + 90
+    while len(comments) < 2 and time.time() < deadline: time.sleep(1)
+    assert comments == ['Bình luận thử', 'Bình luận thử'], f"feed post was not commented: {comments}"
+    run_comment_campaign('Smoke bình luận feed lặp', 'Mock Feed', newest=True)
+    wait_for_log('Không có bài mới nào chưa thử trong feed')
+    assert len(comments) == 2, f"feed post was commented twice: {comments}"
     assert not errors
 
     # A group where admins approve posts: the post is logged as pending, not as posted.
