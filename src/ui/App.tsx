@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { RunBar } from './RunBar';
+import { UpdateNotice } from './UpdateNotice';
 import { ActivityView } from './views/ActivityView';
 import { BackupView } from './views/BackupView';
 import { CampaignsView } from './views/CampaignsView';
@@ -61,6 +62,7 @@ export function App() {
       </header>
       <main id="main" className="container shell__main" tabIndex={-1}>
         <div className="shell__stack">
+          <UpdateNotice withCheck={tab === 'backup'} />
           <RunBar />
           {tab === 'campaigns' && <CampaignsView />}
           {tab === 'groups' && <GroupsView />}

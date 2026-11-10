@@ -6,16 +6,18 @@ import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { withDefaultCampaigns } from '@/lib/defaults';
+import { parseLatestRelease, UPDATE_API_URL, updateCheckDue } from '@/lib/update';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem, updateItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
 const SCHEDULE_ALARM = 'cap-schedule';
+const UPDATE_ALARM = 'cap-update-check';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r: CommandReply) => void) => {
@@ -27,6 +29,7 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM) void runStep();
     if (alarm.name === SCHEDULE_ALARM) void processSchedule();
+    if (alarm.name === UPDATE_ALARM) void checkForUpdate(false);
   });
 
   // Saving or deleting a campaign changes the schedule. Nothing before "now" counts as due then.
@@ -46,6 +49,9 @@ export default defineBackground(() => {
   // The service worker can be restarted at any time; rebuild the timers from stored state.
   void restoreSchedule();
   void processSchedule();
+  // Daily update check (owner-approved exception to "no remote calls"): one GET to GitHub's release API.
+  void browser.alarms.create(UPDATE_ALARM, { periodInMinutes: 60 });
+  void checkForUpdate(false);
 });
 
 async function restoreSchedule(): Promise<void> {
@@ -123,6 +129,35 @@ async function processSchedule(): Promise<void> {
   } finally {
     processing = false;
     await rescheduleAlarm();
+  }
+}
+
+let checkingUpdate = false;
+
+/**
+ * Reads the latest release of the public releases repository and stores it in `updateItem`. Automatic checks
+ * run at most once a day (the hourly alarm only asks whether one is due); `force` is the user's button.
+ * Sends no cookies or user data; the request is a plain GET. Installing stays manual (see lib/update.ts).
+ */
+async function checkForUpdate(force: boolean): Promise<CommandReply> {
+  if (checkingUpdate) return { ok: false, error: 'Đang kiểm tra cập nhật.' };
+  const now = Date.now();
+  if (!force && !updateCheckDue(await updateItem.getValue(), now)) return { ok: true };
+  checkingUpdate = true;
+  try {
+    const response = await fetch(UPDATE_API_URL, { credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
+    if (!response.ok) throw new Error(response.status === 404 ? 'Chưa có bản phát hành nào.' : `GitHub trả về lỗi ${response.status}.`);
+    const latest = parseLatestRelease(await response.json());
+    if (!latest) throw new Error('Không đọc được bản phát hành mới nhất.');
+    await updateItem.setValue({ checkedAt: now, latest, error: null });
+    return { ok: true };
+  } catch (e) {
+    const error = e instanceof TypeError ? 'Không kết nối được GitHub.' : e instanceof Error ? e.message : String(e);
+    const previous = await updateItem.getValue();
+    await updateItem.setValue({ checkedAt: now, latest: previous?.latest ?? null, error });
+    return { ok: false, error };
+  } finally {
+    checkingUpdate = false;
   }
 }
 
@@ -216,6 +251,8 @@ async function handleCommand(cmd: RunCommand, here?: { tabId: number; windowId: 
       void fetchJoinedGroups(); // runs in the background; the UI watches joinedScanItem
       return { ok: true };
     }
+    case 'cap/run/check-update':
+      return checkForUpdate(true);
     case 'cap/run/reset': {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);

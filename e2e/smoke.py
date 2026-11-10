@@ -2,7 +2,7 @@
 against a LOCAL MOCK of a Facebook group page. DNS is remapped so *.facebook.com
 resolves to 127.0.0.1 and every other host fails: no real network traffic.
 Usage: python3 e2e/smoke.py <ext_dir> <chromium_exe> <profile_dir>"""
-import hashlib, http.server, os, ssl, subprocess, sys, tempfile, threading, time, urllib.parse
+import hashlib, http.server, json, os, ssl, subprocess, sys, tempfile, threading, time, urllib.parse
 from playwright.sync_api import sync_playwright
 
 MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
@@ -111,6 +111,12 @@ posted_meta = []  # per post: number of images, whether the preview card was sti
 comments = []
 comment_authors = []
 page_loads = []
+github_requests = []  # update checks: api.github.com is mapped to this mock as well
+LATEST_RELEASE = json.dumps({
+    'tag_name': 'v99.0.0', 'draft': False, 'prerelease': False, 'published_at': '2026-11-11T00:00:00Z',
+    'html_url': 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/tag/v99.0.0',
+    'assets': [{'name': 'connecttech-auto-poster-99.0.0-chrome.zip', 'browser_download_url': 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/download/v99.0.0/cap.zip'}],
+}).encode()
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -119,6 +125,13 @@ class H(http.server.BaseHTTPRequestHandler):
             posted.append(q['t'][0])
             posted_meta.append({'n': int(q.get('n', ['0'])[0]), 'p': int(q.get('p', ['0'])[0]), 'names': q.get('names', [''])[0], 'i': q.get('i', [''])[0]})
             body, ctype = b'ok', 'text/plain'
+        elif self.headers.get('Host', '').startswith('api.github.com'):
+            github_requests.append(self.path)
+            ok = self.path == '/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest'
+            body = LATEST_RELEASE if ok else b'{}'
+            self.send_response(200 if ok else 404); self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*'); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
         elif self.path.startswith('/__comment'):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             comments.append(q['t'][0]); comment_authors.append(q.get('a', [''])[0])
@@ -141,7 +154,7 @@ with sync_playwright() as p:
     ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=os.environ.get('E2E_HEADED') != '1',
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
-              "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
+              "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP api.github.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
     # Test only: skip every wait between runs steps (post/comment delay, group break, Safety Break, retry) so the
     # suite does not sit through them. It runs in the test's extension pages, not in the extension: as soon as a
     # step is scheduled, it moves the stored run's `nextAt` to now and re-creates the alarm. Unpacked extensions may
@@ -174,6 +187,8 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("dialog", lambda d: (native_dialogs.append(d.message), d.accept()))  # must stay empty: CAP uses its own dialog
     pg.goto(f"chrome-extension://{eid}/options.html#groups"); pg.wait_for_selector("text=Connecttech Auto Poster")
+    # The automatic update check at start-up read the (mock) GitHub release: the dashboard offers the newer version.
+    pg.wait_for_selector("text=Có bản mới", timeout=15000)
     pg.fill("#group-list", "https://www.facebook.com/groups/mock1 | Mock One\nhttps://www.facebook.com/groups/mock2 | Mock Two\nhttps://evil.example/groups/x")
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("text=Nhóm của bạn (2)")
     assert pg.locator("text=không phải liên kết nhóm Facebook").count() == 1, "reject notice missing"
@@ -507,11 +522,18 @@ with sync_playwright() as p:
     # The chat box on a Facebook page (not only group pages): a round button opens a small window with the run
     # status, recent activity and a start button; it expands to the full dashboard in place, minimises and closes.
     # The mock sends a frame-src CSP like Facebook does; the extension pages must still load in the window.
+    # The backup test above cleared storage; "Kiểm tra cập nhật" (tab Sao lưu) checks again at once.
+    pg.click("button:text-is('Sao lưu')"); pg.click("button:has-text('Kiểm tra cập nhật')")
+    pg.wait_for_selector("text=Có bản mới", timeout=15000)
     fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: (native_dialogs.append(d.message), d.accept())); fb.goto('https://www.facebook.com/')
     fb.click('cap-chat-host .cap-chat__launcher')
     chat = fb.frame_locator('cap-chat-host iframe')
     chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
     assert chat.locator('.chatbox__message').count() > 0, 'activity feed is empty'
+    # The daily update check read the (mock) GitHub release, so the chat box offers the newer version.
+    chat.locator("text=Có bản mới").wait_for(timeout=15000)
+    assert chat.locator("a:has-text('Tải bản 99.0.0')").get_attribute('href').startswith('https://github.com/'), 'zip link must point to github.com'
+    assert len(github_requests) >= 2 and set(github_requests) == {'/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest'}, github_requests
     fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
     fb.click("cap-chat-host button[aria-label='Mở rộng']")
     chat.locator("button:text-is('Chiến dịch')").wait_for(timeout=15000)

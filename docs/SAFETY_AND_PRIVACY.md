@@ -42,7 +42,8 @@ Facebook has no public API for posting to groups, and automating the web interfa
 CAP deliberately has **no** features for evading detection (fingerprint spoofing, account rotation, proxies, humanized mouse emulation such as random movement paths or fake idle movement, hidden posting). The single hover on a post's time label exists only to read the time and is not meant to look human. Do not add evasion features.
 
 ## Privacy
-- No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
+- No backend, no analytics, no telemetry, no remote code. The only request outside Facebook is the **update check** (owner's decision, 2026-11-10): a plain GET of `https://api.github.com/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest`, at most once a day and when you press **Kiểm tra cập nhật**. It sends no cookies and no data about you, your groups or campaigns (GitHub sees the request's IP address and browser, like any web request). It only reads the version number and github.com links; nothing is downloaded or installed automatically. No permission or host was added for it (GitHub's API allows it). In the smoke test, GitHub is answered by the local mock; every other host is blocked.
+- `local:update` holds the result of the last update check (time, latest version, its GitHub links, the last error). It is never exported.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries), settings (notification on/off). The Tổng quan page is computed from that log on this device.
 - `local:chatbox` holds only whether the chat box on Facebook pages is open, minimised or expanded; it is never exported.
 - `local:joinedScan` holds the last joined-groups preview (group ids and names as Facebook shows them) until the next scan; it is never exported and is deleted with the extension.

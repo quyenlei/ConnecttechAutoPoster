@@ -65,6 +65,7 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 4. A Stop/Pause pressed during a step wins: the outcome is logged but the state is not advanced.
 5. On service-worker start, `restoreSchedule` recreates the alarm from `RunState.nextAt`.
 6. Chrome fires alarms no sooner than 30 s. Comment campaigns wait less (`LIMITS.minCommentDelaySec`), so `schedule` also starts a `setTimeout` in the running worker for any wait under 30 s. The alarm stays as the restart-safe backup, and `runStep` re-schedules instead of acting when it is called before `nextAt`.
+7. Update check (`lib/update.ts`, background `checkForUpdate`): the hourly alarm `cap-update-check` and each worker start check whether a day has passed since the last check (`updateCheckDue`), then GET the latest release of `UPDATE_REPO` and store `parseLatestRelease` (version, release page, zip link; github.com links only) in `local:update`. `cap/run/check-update` forces a check. `UpdateNotice` shows it in the dashboard and the chat box. Installing is manual: Chrome does not let an unpacked extension replace its files. `pnpm release` publishes a version there.
 
 ## Group names
 

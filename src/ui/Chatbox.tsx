@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { isActive } from '@/lib/run-engine';
 import { campaignsItem, logsItem, runItem } from '@/lib/storage';
 import { RunBar } from './RunBar';
+import { UpdateNotice } from './UpdateNotice';
 import { useConfirm } from './confirm';
 import { sendCommand, useItem } from './hooks';
 import { LOG_STATUS_LABEL } from './labels';
@@ -49,6 +50,7 @@ export function Chatbox() {
 
   return (
     <main className="chatbox__app">
+      <UpdateNotice compact />
       <RunBar compact />
       <ol className="chatbox__feed" ref={feedRef} aria-label="Hoạt động gần đây" aria-live="polite">
         {recent.length === 0 && <li className="chatbox__empty">Chưa có hoạt động nào. Chọn chiến dịch bên dưới rồi bấm Chạy.</li>}

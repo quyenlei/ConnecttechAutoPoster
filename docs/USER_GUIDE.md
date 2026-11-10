@@ -12,10 +12,13 @@ CAP is shared as a zip file, for example `connecttech-auto-poster-0.2.0-chrome.z
 Chrome may show a "Disable developer mode extensions" prompt when it starts. This is normal for this install method. Dismiss it.
 
 ### Update to a new version
-1. Unzip the new file over the same folder.
-2. On `chrome://extensions`, click the reload icon (⟳) on the CAP card.
+CAP checks GitHub for a newer version once a day (tab **Sao lưu** → **Kiểm tra cập nhật** checks at once). When there is one, the dashboard and the chat box show **Có bản mới** with a download button. Chrome does not let an extension installed this way replace itself, so installing stays manual:
 
-Your groups, campaigns and activity stay in place, because they are stored in the browser and the folder did not change. There is no automatic update. Each person must update by hand.
+1. Download the zip and unzip it over the same folder.
+2. On `chrome://extensions`, click the reload icon (⟳) on the CAP card.
+3. Reload your open Facebook tabs.
+
+Your groups, campaigns and activity stay in place, because they are stored in the browser and the folder did not change.
 
 Each computer and each Chrome profile keeps its own data.
 
