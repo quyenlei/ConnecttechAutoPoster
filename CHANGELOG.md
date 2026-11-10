@@ -2,6 +2,11 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.8] - 2026-11-10
+
+### Added
+- **Update check.** Once a day (and with **Kiểm tra cập nhật** in tab Sao lưu) CAP asks GitHub for the latest release of the public releases repository `quyenlei/ConnecttechAutoPoster-releases`. When it is newer than the installed version, the dashboard and the chat box show **Có bản mới** with a download button and the install steps. Installing stays manual: Chrome does not let an unpacked extension replace its own files. This is the first request outside Facebook, an owner-approved exception to "no remote calls" (`CLAUDE.md` rule 3): a plain GET without cookies or user data that reads only a version and github.com links. No permission or host was added. `pnpm release` zips the build and publishes it as release `v<version>` there with its CHANGELOG notes. Checked against a local GitHub mock in the smoke test; the releases repository does not exist yet, so a real check currently reports "Chưa có bản phát hành nào".
+
 ## [0.6.7] - 2026-11-10
 
 ### Fixed

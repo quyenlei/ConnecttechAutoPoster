@@ -2,6 +2,7 @@ import { storage } from 'wxt/utils/storage';
 import { LIMITS } from './limits';
 import type { BackupData } from './backup';
 import { IDLE_RUN, isActive } from './run-engine';
+import type { UpdateState } from './update';
 import type { Campaign, CommentTab, Group, JoinedScan, LogEntry, RunState, Settings } from './types';
 
 /** All data stays in chrome.storage.local on this device. Nothing is sent anywhere. */
@@ -26,6 +27,8 @@ export interface ChatboxState {
 export const chatboxItem = storage.defineItem<ChatboxState>('local:chatbox', { fallback: { open: false, minimized: false, expanded: false } });
 /** Epoch ms until which comment runs are locked after a checkpoint or block. Never exported in a backup. */
 export const commentLockItem = storage.defineItem<number | null>('local:commentLock', { fallback: null });
+/** Result of the last update check (latest version and its GitHub links). Never exported in a backup. */
+export const updateItem = storage.defineItem<UpdateState | null>('local:update', { fallback: null });
 /** Epoch ms of the last time due schedule slots were processed. */
 export const scheduleCheckItem = storage.defineItem<number | null>('local:scheduleCheck', { fallback: null });
 

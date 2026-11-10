@@ -37,5 +37,5 @@ See [CLAUDE.md](../CLAUDE.md) and `.claude/rules/`. In short: strict TypeScript,
 ## Release
 1. Update `CHANGELOG.md`. Each `pnpm build` increments the patch version in `package.json` before building; the resulting manifest version is displayed in the dashboard and popup. A failed build also consumes a version number. `pnpm dev` and `pnpm zip` do not increment it.
 2. `pnpm typecheck && pnpm test && pnpm test:e2e`.
-3. `pnpm zip` → `.output/*.zip` for the Chrome Web Store.
+3. `pnpm release` publishes the current version for the in-extension update check: it zips the build and creates the GitHub release `v<version>` in the public releases repository (`UPDATE_REPO` in `src/lib/update.ts`, currently `quyenlei/ConnecttechAutoPoster-releases`) with that version's `CHANGELOG.md` section as notes. It needs `gh` logged in with access to that repository and does not bump the version. Only the built zip goes there; the source repository stays private. `pnpm zip` alone just makes `.output/*.zip`.
 4. Review `docs/SAFETY_AND_PRIVACY.md` against any permission change (store review requires a justification per permission).

@@ -99,7 +99,9 @@ export type RunCommand =
   /** Opens groups without a name one by one (read-only) and stores the names. */
   | { type: 'cap/run/fetch-names' }
   /** Reads the user's joined groups from facebook.com/groups/joins/ (read-only) into `joinedScanItem`. */
-  | { type: 'cap/run/fetch-joined' };
+  | { type: 'cap/run/fetch-joined' }
+  /** Asks GitHub for the latest release now, instead of waiting for the daily check. */
+  | { type: 'cap/run/check-update' };
 
 export interface CommandReply {
   ok: boolean;
