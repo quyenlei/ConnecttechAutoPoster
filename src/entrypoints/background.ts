@@ -5,6 +5,7 @@ import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
+import { withDefaultCampaigns } from '@/lib/defaults';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
@@ -31,6 +32,15 @@ export default defineBackground(() => {
   // Saving or deleting a campaign changes the schedule. Nothing before "now" counts as due then.
   campaignsItem.watch(() => {
     void scheduleCheckItem.setValue(Date.now()).then(rescheduleAlarm);
+  });
+
+  // First install: start with the two ready-made campaigns. Nothing runs until the user writes their text.
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason !== 'install') return;
+    void (async () => {
+      if ((await campaignsItem.getValue()).length > 0) return;
+      await campaignsItem.setValue(withDefaultCampaigns([], await groupsItem.getValue(), Date.now()).campaigns);
+    })();
   });
 
   // The service worker can be restarted at any time; rebuild the timers from stored state.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, recommendDelay } from '@/lib/delay';
+import { withDefaultCampaigns } from '@/lib/defaults';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
@@ -143,6 +144,19 @@ export function CampaignsView() {
     setMessage(errors.length > 0 ? { text: errors.join(' '), danger: true } : null);
   }
 
+  /** Adds the two ready-made campaigns (fast comments, posting) on every saved group, unless they exist already. */
+  async function addDefaults() {
+    const result = withDefaultCampaigns(await campaignsItem.getValue(), await groupsItem.getValue(), Date.now());
+    if (result.added === 0) {
+      setMessage({ text: 'Hai chiến dịch mặc định đã có sẵn trong danh sách.', danger: false });
+      return;
+    }
+    await campaignsItem.setValue(result.campaigns);
+    const first = result.campaigns[result.campaigns.length - result.added];
+    if (first) select(first); // asks first when the open campaign has unsaved changes
+    setMessage({ text: `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm. Hãy viết nội dung rồi lưu trước khi chạy.`, danger: false });
+  }
+
   async function save(): Promise<Campaign | null> {
     if (!draft) return null;
     if (busy && run?.campaignId === draft.id) {
@@ -211,7 +225,10 @@ export function CampaignsView() {
       <section className="card campaigns__sidebar" aria-label="Chiến dịch đã lưu">
         <div className="card__head">
           <h2>Chiến dịch</h2>
-          <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>
+          <div className="runbar__actions">
+            <button className="button button--small" type="button" onClick={() => void addDefaults()}>Tạo chiến dịch mặc định</button>
+            <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>
+          </div>
         </div>
         {campaigns.length === 0 && <p className="u-muted">Chưa có chiến dịch nào được lưu.</p>}
         <ul>

@@ -37,6 +37,7 @@ Only `https://facebook.com/groups/...` links are accepted (also `www.`, `m.`, `w
 If you add a link without a name, the list shows the group id. Press **Lấy tên nhóm** to read the real names: CAP opens each unnamed group once in a background tab and reads its title. It never changes names you typed. Names are also filled in automatically the first time CAP posts to a group. Not verified on live Facebook, where the page title may differ; you can always type the name yourself with `URL | Name`.
 
 ## 2. Create a campaign
+**Chiến dịch mặc định:** bấm **Tạo chiến dịch mặc định** trong tab Chiến dịch để có sẵn hai chiến dịch trên tất cả nhóm đã lưu: **Bình luận nhanh** (25 bài mỗi nhóm, cách nhau 2–4 giây, nghỉ 10–20 giây khi chuyển nhóm) và **Đăng bài vào nhóm** (khoảng chờ khuyến nghị, có nghỉ an toàn). Nội dung để trống: hãy viết nội dung, bỏ bớt nhóm nếu cần, rồi lưu trước khi chạy. Nút chỉ thêm chiến dịch còn thiếu, không sửa chiến dịch bạn đã có. Lần cài đặt đầu tiên, hai chiến dịch này được tạo sẵn.
 Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 1. **Name** it.
 2. **Post text**: write version 1. **Add another version** to rotate texts so consecutive groups differ (version n is used for the n-th group, then repeats).

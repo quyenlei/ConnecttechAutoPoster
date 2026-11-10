@@ -2,6 +2,11 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.5] - 2026-11-10
+
+### Added
+- **Two default campaigns.** "Bình luận nhanh" (comments, 25 per group, 2–4 s apart, 10–20 s between groups, Safety Break off) and "Đăng bài vào nhóm" (posts, recommended delay, Safety Break on), both on every saved group (max 100) and with empty text, so neither can run until the user writes it. Added automatically on first install when there are no campaigns, and any time with **Tạo chiến dịch mặc định** in the Chiến dịch tab, which adds only the ones that are missing and never changes an existing campaign. `lib/defaults.ts`.
+
 ## [0.6.4] - 2026-11-10
 
 ### Changed

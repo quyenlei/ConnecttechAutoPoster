@@ -174,7 +174,17 @@ with sync_playwright() as p:
     pg.wait_for_selector("td:text-is('Mock Group Name')", timeout=60000)
     assert pg.locator("td:text-is('Mock One')").count() == 1, "typed name must not be overwritten"
 
+    # The two ready-made campaigns: created on first install (no groups yet then), with empty text, so they
+    # cannot run yet. The button adds only missing ones: none now; after deleting one, that one again, on the 3 groups.
     pg.click("button:has-text('Chiến dịch')")
+    pg.wait_for_selector("button:text-is('Bình luận nhanh')"); pg.wait_for_selector("button:text-is('Đăng bài vào nhóm')")
+    pg.click("button:has-text('Tạo chiến dịch mặc định')")
+    pg.wait_for_selector("text=Hai chiến dịch mặc định đã có sẵn")
+    pg.evaluate("chrome.storage.local.get('campaigns').then(d => chrome.storage.local.set({ campaigns: d.campaigns.filter(c => c.id !== 'default-comment') }))")
+    pg.wait_for_selector("button:text-is('Bình luận nhanh')", state='detached')
+    pg.click("button:has-text('Tạo chiến dịch mặc định')")
+    pg.wait_for_selector("text=Đã tạo 1 chiến dịch mặc định trên 3 nhóm")
+    assert pg.locator("#c-name").input_value() == 'Bình luận nhanh'
     pg.click("button:has-text('Tạo mới')")
     pg.fill("#c-name", "Smoke")
     pg.fill("#c-var-0", "Hello A"); pg.click("button:has-text('Thêm phiên bản khác')"); pg.fill("#c-var-1", "Hello B")
