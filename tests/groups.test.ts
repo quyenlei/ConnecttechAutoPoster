@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addToSelection, filterGroups, parseGroupList, parseGroupSlug, newestPostsGroupUrl, removeFromSelection, withReadName } from '../src/lib/groups';
+import { addJoinedGroups, addToSelection, filterGroups, parseGroupList, parseGroupSlug, newestPostsGroupUrl, previewJoinedGroups, removeFromSelection, withReadName } from '../src/lib/groups';
 
 describe('parseGroupSlug', () => {
   it('builds the recent activity feed URL for comment discovery', () => {
@@ -70,5 +70,30 @@ describe('group selection', () => {
   });
   it('removes only the given ids', () => {
     expect(removeFromSelection(['1', '2', '3'], ['2'])).toEqual(['1', '3']);
+  });
+});
+
+describe('joined groups import', () => {
+  const existing = [{ id: 'abc', name: 'Tên tôi đặt', url: 'https://www.facebook.com/groups/abc/' }];
+
+  it('previews found groups once each, in page order, marking the ones already listed', () => {
+    const rows = previewJoinedGroups(existing, [
+      { id: 'ABC', name: 'Tên Facebook' },
+      { id: '123', name: null },
+      { id: 'xyz', name: '  Nhóm XYZ ' },
+      { id: '123', name: 'Trùng' },
+    ]);
+    expect(rows).toEqual([
+      { id: 'ABC', name: 'Tên Facebook', url: 'https://www.facebook.com/groups/ABC/', exists: true },
+      { id: '123', name: '123', url: 'https://www.facebook.com/groups/123/', exists: false },
+      { id: 'xyz', name: 'Nhóm XYZ', url: 'https://www.facebook.com/groups/xyz/', exists: false },
+    ]);
+  });
+
+  it('adds only chosen rows that are new and keeps existing names', () => {
+    const rows = previewJoinedGroups(existing, [{ id: 'abc', name: 'Khác' }, { id: 'xyz', name: 'Nhóm XYZ' }, { id: 'q', name: 'Q' }]);
+    const next = addJoinedGroups(existing, rows, new Set(['abc', 'xyz']));
+    expect(next).toEqual([existing[0], { id: 'xyz', name: 'Nhóm XYZ', url: 'https://www.facebook.com/groups/xyz/' }]);
+    expect(addJoinedGroups(existing, rows, new Set())).toEqual(existing);
   });
 });

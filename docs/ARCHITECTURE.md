@@ -92,6 +92,10 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 - **`planImport(current, backup)`** merges without deleting. An existing id keeps the current item. Groups also match by canonical URL, and campaign `groupIds` follow the match. Imported schedules are set to `enabled: false`. Logs merge by id and keep the newest `LIMITS.maxLogEntries`. File settings apply only when the current settings are the defaults.
 - **Write:** the view merges again with fresh data on confirm. `writeImportedData` checks `isActive(run)` right before writing and refuses while a run is active. Nothing in this flow starts a run.
 
+## Joined groups import
+
+`cap/run/fetch-joined` (Groups tab button) runs `fetchJoinedGroups` in the background: an active tab in the current window on `facebook.com/groups/joins/` (`openVisibleTab`), then `cap/joined-groups` to the content script. `readJoinedList` waits for `fb-dom.findJoinedGroupsSection` (the largest block around the "Tất cả các nhóm bạn đã tham gia" heading that holds no other heading, so pending requests and navigation stay out), scrolls to the end until the count stops growing three times (or `LIMITS.maxJoinedGroups` / `joinedScanTimeoutMs`), and returns `readJoinedGroups` (one entry per `/groups/<id>/` link, first text that is not "Xem nhóm" as the name) plus the heading count. The result goes to `local:joinedScan` and the window closes. `GroupsView` shows `groups.previewJoinedGroups` and writes `groups.addJoinedGroups` for the ticked rows only.
+
 ## Comment campaigns
 
 A campaign with `mode: 'comment'` goes through the same run engine; only the step differs (`commentInGroup` instead of `postToGroup`). Mock-tested only; not verified on live Facebook.
@@ -120,6 +124,6 @@ A campaign with `mode: 'comment'` goes through the same run engine; only the ste
 | Logic in `lib/` | Testable without a browser; the browser parts stay thin |
 | Storage as single source of truth | Restart-safe worker, trivially reactive UI |
 | Selectors isolated in `fb-dom.ts` | Facebook changes; one file to fix |
-| No scraping of the group list | Less risk and less code; users paste links |
+| Group list: paste, or opt-in import of the joined groups | The import reads only the user's own joined-groups page and shows a preview; the user picks what is added |
 | `chrome.alarms` (not `setTimeout`) | Survives worker suspension |
 | React + SCSS | Requested modern stack; SCSS/BEM per team convention |

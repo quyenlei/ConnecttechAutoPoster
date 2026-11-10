@@ -33,6 +33,7 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 
 ## v0.4 data
 - [x] Backup and restore (JSON export/import with preview; never includes Facebook data). Tested with unit tests and the local mock only.
+- [x] Import the joined groups from Facebook (opt-in, preview, user picks). Checked live once: 144/144.
 - [ ] Group tags/folders and saved group lists.
 - [x] Scheduled campaigns: fixed daily times (v0.2.0). Weekday or one-off dates are not planned yet.
 

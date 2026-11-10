@@ -15,6 +15,9 @@ export const LIMITS = {
   feedScanTimeoutMs: 60_000,
   /** Wait for a placeholder feed item to render, or for more items to load after scrolling. */
   feedRenderWaitMs: 2_500,
+  /** "Lấy danh sách nhóm đã tham gia": stop after this many groups or this long. */
+  maxJoinedGroups: 500,
+  joinedScanTimeoutMs: 120_000,
   /** After hovering the post time, wait this long for Facebook to show the time or link. */
   hoverWaitMs: 1_500,
   maxVariations: 10,

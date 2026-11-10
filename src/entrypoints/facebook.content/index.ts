@@ -39,19 +39,26 @@ import {
   findItemEditor,
   findItemCommentAction,
   findDialogCommentEditor,
+  findJoinedGroupsSection,
+  joinedGroupsCount,
+  readJoinedGroups,
   type FeedPost,
 } from '@/lib/fb-dom';
 import { commentKeys, describeScan, emptyCounts, feedIsExhausted, judgeFeedPost, type FeedCandidate, type SkipReason } from '@/lib/comment-pick';
 import { dataUrlToBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
-import { isFeedCommentRequest, isFeedPickRequest, isGroupNameRequest, isPostRequest, type FeedCommentRequest, type FeedPickReply, type FeedPickRequest, type GroupNameReply, type PostRequest } from '@/lib/messages';
+import { isFeedCommentRequest, isFeedPickRequest, isGroupNameRequest, isJoinedGroupsRequest, isPostRequest, type FeedCommentRequest, type FeedPickReply, type FeedPickRequest, type GroupNameReply, type JoinedGroupsReply, type PostRequest } from '@/lib/messages';
 import type { PostOutcome } from '@/lib/types';
 
 export default defineContentScript({
   matches: ['*://*.facebook.com/groups/*'],
   runAt: 'document_idle',
   main() {
-    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome | GroupNameReply | FeedPickReply) => void) => {
+    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome | GroupNameReply | FeedPickReply | JoinedGroupsReply) => void) => {
+      if (isJoinedGroupsRequest(message)) {
+        readJoinedList().then(sendResponse, () => sendResponse({ groups: [], problem: { fatal: false, reason: 'Không đọc được danh sách nhóm.' } }));
+        return true;
+      }
       if (isFeedPickRequest(message)) {
         pickFeedPost(message).then(sendResponse, () => sendResponse({ problem: { kind: 'failed', reason: 'Không thể quét bài viết trong feed.' } }));
         return true;
@@ -81,6 +88,34 @@ async function readName(): Promise<GroupNameReply> {
 }
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Read-only: scrolls facebook.com/groups/joins/ until the "groups you joined" list stops growing, then returns
+ * the groups in it. Pending join requests are a separate section and are left out. Nothing is clicked.
+ */
+async function readJoinedList(): Promise<JoinedGroupsReply> {
+  const problem = detectPageProblem(document, location.pathname);
+  if (problem?.kind === 'fatal') return { groups: [], problem: { fatal: true, reason: problem.reason } };
+  if (!(await waitFor(() => findJoinedGroupsSection(document), 15_000))) {
+    return { groups: [], problem: { fatal: false, reason: 'Không thấy mục "Tất cả các nhóm bạn đã tham gia" (có thể Facebook đã đổi giao diện).' } };
+  }
+  const read = () => {
+    const section = findJoinedGroupsSection(document);
+    return section ? readJoinedGroups(section) : [];
+  };
+  const deadline = Date.now() + LIMITS.joinedScanTimeoutMs;
+  let count = read().length;
+  let unchanged = 0;
+  while (count < LIMITS.maxJoinedGroups && unchanged < 3 && Date.now() < deadline) {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const before = count;
+    await waitFor(() => read().length > before, LIMITS.feedRenderWaitMs, 250);
+    count = read().length;
+    unchanged = count > before ? 0 : unchanged + 1;
+  }
+  const expected = joinedGroupsCount(document);
+  return { groups: read().slice(0, LIMITS.maxJoinedGroups), ...(expected !== null ? { expected } : {}) };
+}
 
 const asCandidate = (post: FeedPost): FeedCandidate => ({
   fingerprint: post.fingerprint,

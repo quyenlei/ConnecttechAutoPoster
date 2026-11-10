@@ -1,0 +1,29 @@
+@use '../abstracts/variables' as *;
+
+.groups {
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__joined {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+    padding: $space-3;
+    border: 1px solid var(--color-border);
+    border-radius: $radius;
+    background: var(--color-surface-alt);
+  }
+
+  &__joined-list {
+    max-height: 28rem;
+    overflow-y: auto;
+  }
+
+  &__joined-name {
+    overflow-wrap: anywhere;
+  }
+}

@@ -79,3 +79,40 @@ export function removeFromSelection(selected: string[], ids: string[]): string[]
   return selected.filter((id) => !drop.has(id));
 }
 
+/** A group read from Facebook's "groups you joined" page. */
+export interface FoundGroup {
+  id: string;
+  /** Null when the page showed no name for it. */
+  name: string | null;
+}
+
+export interface JoinedPreviewRow {
+  id: string;
+  name: string;
+  url: string;
+  /** Already in the list (same id, ignoring case). A numeric id and a named link of one group cannot be matched. */
+  exists: boolean;
+}
+
+/** One row per found group, without duplicates, in page order, marking those already in the list. */
+export function previewJoinedGroups(existing: Group[], found: FoundGroup[]): JoinedPreviewRow[] {
+  const have = new Set(existing.map((g) => g.id.toLowerCase()));
+  const seen = new Set<string>();
+  const rows: JoinedPreviewRow[] = [];
+  for (const g of found) {
+    const key = g.id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ id: g.id, name: g.name?.trim() || g.id, url: canonicalGroupUrl(g.id), exists: have.has(key) });
+  }
+  return rows;
+}
+
+/** The list after adding the chosen rows that are not in it yet. Existing groups and their names are kept. */
+export function addJoinedGroups(existing: Group[], rows: JoinedPreviewRow[], chosen: ReadonlySet<string>): Group[] {
+  const have = new Set(existing.map((g) => g.id.toLowerCase()));
+  const added = rows
+    .filter((r) => chosen.has(r.id) && !have.has(r.id.toLowerCase()))
+    .map((r) => ({ id: r.id, name: r.name, url: r.url }));
+  return [...existing, ...added];
+}

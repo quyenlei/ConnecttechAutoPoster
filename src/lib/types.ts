@@ -100,6 +100,17 @@ export interface CommentTab {
   runStartedAt: number;
 }
 
+/** Result of the last "Lấy danh sách nhóm đã tham gia". Only a preview: nothing is added until the user chooses. */
+export interface JoinedScan {
+  status: 'running' | 'done' | 'failed';
+  /** Epoch ms when the scan started or ended. */
+  at: number;
+  groups: Array<{ id: string; name: string | null }>;
+  /** Count shown by Facebook, when it shows one. */
+  expected?: number;
+  error?: string;
+}
+
 /** Local preferences. Everything is off until the user turns it on. */
 export interface Settings {
   /** Show a desktop notification when a run finishes, pauses or is halted. */

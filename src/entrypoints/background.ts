@@ -3,12 +3,12 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { validateImages, totalImageBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
-import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
+import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentTabItem, groupsItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -167,6 +167,12 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       void fetchGroupNames(); // runs in the background; the UI watches storage
       return { ok: true };
     }
+    case 'cap/run/fetch-joined': {
+      if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
+      if (fetchingNames || fetchingJoined) return { ok: false, error: 'Đang đọc dữ liệu từ Facebook, hãy chờ xong.' };
+      void fetchJoinedGroups(); // runs in the background; the UI watches joinedScanItem
+      return { ok: true };
+    }
     case 'cap/run/reset': {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);
@@ -306,6 +312,34 @@ async function fetchGroupNames(): Promise<void> {
     }
   } finally {
     fetchingNames = false;
+  }
+}
+
+let fetchingJoined = false;
+const JOINED_URL = 'https://www.facebook.com/groups/joins/?nav_source=tab';
+
+/**
+ * Opt-in, read-only: opens Facebook's "groups you joined" page as the active tab of the current window (the list
+ * loads only while scrolled in a rendered page), lets the content script read it, stores the result as a preview,
+ * closes the tab and shows the user's previous tab again. Nothing is added to the group list here; the user chooses in the UI.
+ */
+async function fetchJoinedGroups(): Promise<void> {
+  fetchingJoined = true;
+  let opened: { tabId: number; returnTabId?: number } | undefined;
+  await joinedScanItem.setValue({ status: 'running', at: Date.now(), groups: [] });
+  try {
+    opened = await openVisibleTab(JOINED_URL);
+    const { tabId } = opened;
+    await waitForTab(tabId, 'https://www.facebook.com/groups/joins');
+    const request: JoinedGroupsRequest = { type: 'cap/joined-groups' };
+    const reply = (await withTimeout(sendWithRetry(tabId, request), LIMITS.joinedScanTimeoutMs + 30_000, 'Hết thời gian đọc danh sách nhóm.')) as JoinedGroupsReply;
+    if (reply.problem) throw new Error(reply.problem.reason);
+    await joinedScanItem.setValue({ status: 'done', at: Date.now(), groups: reply.groups, ...(reply.expected !== undefined ? { expected: reply.expected } : {}) });
+  } catch (e) {
+    await joinedScanItem.setValue({ status: 'failed', at: Date.now(), groups: [], error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    if (opened) await closeVisibleTab(opened.tabId, opened.returnTabId);
+    fetchingJoined = false;
   }
 }
 
@@ -470,7 +504,7 @@ function waitForTab(tabId: number, expected?: string): Promise<void> {
 }
 
 /** The content script may not be ready the instant the tab reports complete. */
-async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | FeedPickRequest): Promise<unknown> {
+async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | FeedPickRequest | JoinedGroupsRequest): Promise<unknown> {
   let lastError: unknown;
   for (let i = 0; i < 8; i++) {
     try {

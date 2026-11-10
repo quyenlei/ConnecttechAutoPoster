@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, postFingerprint, findCommentButton, describeCommentButtons, pressEnter, pressEscape, parseAgeLabel, parseFacebookDate, readStructuredPostTimes, findFeedItems, isFeedItemRendered, readFeedPost, findMyName, hasMyComment, findItemEditor, findItemCommentAction, findTimestampTargets, hoverOver, hoverOut, findDialogCommentEditor, type FeedReadContext, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, postFingerprint, findCommentButton, describeCommentButtons, pressEnter, pressEscape, parseAgeLabel, parseFacebookDate, readStructuredPostTimes, findFeedItems, isFeedItemRendered, readFeedPost, findMyName, hasMyComment, findItemEditor, findItemCommentAction, findTimestampTargets, hoverOver, hoverOut, findDialogCommentEditor, findJoinedGroupsSection, joinedGroupsCount, readJoinedGroups, type FeedReadContext, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -507,4 +507,38 @@ it('presses Enter as keydown, keypress and keyup', () => {
   for (const type of ['keydown', 'keypress', 'keyup']) box.addEventListener(type, (e) => seen.push(`${e.type}:${(e as KeyboardEvent).key}`));
   pressEnter(box);
   expect(seen).toEqual(['keydown:Enter', 'keypress:Enter', 'keyup:Enter']);
+});
+
+describe('joined groups page', () => {
+  // Shape measured live on facebook.com/groups/joins/ (2026-11-10): two sections, each with one heading.
+  const page = `<div role="navigation"><a href="/groups/feed/">Bảng feed</a><a href="/groups/navgroup/">Nhóm ở menu</a></div>
+    <div role="main"><div>
+      <div><div><h2>Yêu cầu tham gia nhóm đang chờ (1)</h2><a href="https://www.facebook.com/groups/pending1/">Nhóm chờ duyệt</a></div></div>
+      <div><div><h2>Tất cả các nhóm bạn đã tham gia (3)</h2>
+        <div><a href="https://www.facebook.com/groups/shopify/">Shopify Entrepreneurs</a><a href="https://www.facebook.com/groups/shopify/" aria-label="Xem nhóm">Xem nhóm</a></div>
+        <div><a href="https://www.facebook.com/groups/123456789/"><img alt=""></a><a href="https://www.facebook.com/groups/123456789/">Khởi nghiệp 2K</a></div>
+        <div><a href="https://www.facebook.com/groups/seo2018/">Xem nhóm</a><a href="https://www.facebook.com/groups/seo2018/posts/1/">bài</a><a href="https://evil.example/groups/x/">x</a></div>
+      </div></div>
+    </div></div>`;
+
+  it('finds only the joined section, not pending requests or navigation', () => {
+    document.body.innerHTML = page;
+    const section = findJoinedGroupsSection(document)!;
+    expect(readJoinedGroups(section)).toEqual([
+      { id: 'shopify', name: 'Shopify Entrepreneurs' },
+      { id: '123456789', name: 'Khởi nghiệp 2K' },
+      { id: 'seo2018', name: null },
+    ]);
+  });
+
+  it('reads the count from the heading', () => {
+    document.body.innerHTML = page;
+    expect(joinedGroupsCount(document)).toBe(3);
+  });
+
+  it('returns nothing when the heading is missing', () => {
+    document.body.innerHTML = '<div role="main"><h2>Nhóm khác</h2><a href="/groups/a/">A</a></div>';
+    expect(findJoinedGroupsSection(document)).toBeNull();
+    expect(joinedGroupsCount(document)).toBeNull();
+  });
 });

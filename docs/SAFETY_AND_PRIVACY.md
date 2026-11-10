@@ -30,6 +30,7 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | Comment runs use one visible tab in the user's current window (no hidden or background posting), reused within a group and closed when the run finishes, pauses, stops or halts; the user's previous tab is then shown again. A scan looks at most 40 posts or 60 s; scrolling only loads the group's own feed | background `openGroupFeed`, `lib/limits.ts` |
 | When a post's time is not readable, CAP hovers up to 4 likely time labels of that post once (pointer/mouse over and out events on one element), because Facebook shows the time only under the pointer. No clicks, no random or simulated movement paths, profile links excluded. Mock-tested only | content script `revealTime`, `lib/fb-dom.ts` `findTimestampTargets`, `hoverOver` |
 | A post without a comment editor gets its own "Bình luận" button clicked once to open one; nothing else on the page is clicked | content script `commentOnPickedPost` |
+| **Lấy danh sách nhóm đã tham gia** is opt-in (button + confirmation), never runs during a run or while names are being read, and only reads the "groups you joined" section of `facebook.com/groups/joins/` in an active tab of the current window that closes afterwards (max 500 groups, 120 s). No clicks, no group page is opened, no member data. Nothing is added until the user ticks groups | background `fetchJoinedGroups`, `lib/fb-dom.ts` `findJoinedGroupsSection`, `readJoinedGroups` |
 | The post link and the run slot are saved before the comment editor opens, so a post is never commented twice and an uncertain submission is never retried automatically | background `commentInGroup` |
 | A comment counts as sent only when a new visible comment appears and the editor is cleared | content script |
 
@@ -38,6 +39,7 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 ## Privacy
 - No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries), settings (notification on/off). The Tổng quan page is computed from that log on this device.
+- `local:joinedScan` holds the last joined-groups preview (group ids and names as Facebook shows them) until the next scan; it is never exported and is deleted with the extension.
 - `local:commentTab` holds only the ids of the open comment tab, its window, the tab to return to and the group while a comment run uses it; it is cleared when the tab closes and never exported.
 - Comment campaigns keep attempted post links locally without automatic expiry run-slot identifiers for seven days, and, in newest-posts mode, a short hash of the author and the start of the post text (never the text itself, no automatic expiry) to avoid automatic retries after an uncertain submission.
 - **Backup file (tab Sao lưu):** created only when you press export, saved by the browser to your own device. It contains post texts, group names and the activity log, and is not encrypted. CAP never uploads it. It never contains Facebook cookies, tokens, run state or comment re-run protection data.
@@ -52,7 +54,7 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 |---|---|
 | `storage` | Keep groups, campaigns, logs, run state on the device |
 | `alarms` | Wake the service worker for the next post and for the next daily schedule time (`cap-schedule`). No new permission was added for the schedule. |
-| `tabs` | Open the group page in a background tab (posts) or as the visible tab of the current window (comments), message it, close it, and re-activate the user's previous tab. |
+| `tabs` | Open the group page in a background tab (posts) or as the visible tab of the current window (comments, joined groups), message it, close it, and re-activate the user's previous tab. |
 | `notifications` | Show the opt-in desktop notification when a run finishes, pauses or is halted. Nothing is sent anywhere. |
 | host `*://*.facebook.com/*` | Run the content script and open group pages |
 

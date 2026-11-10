@@ -1,4 +1,5 @@
 import type { FeedMode } from './comment-pick';
+import type { FoundGroup } from './groups';
 import type { PostOutcome } from './types';
 
 /** Background -> content script (group page). */
@@ -60,6 +61,21 @@ export const isFeedCommentRequest = (m: unknown): m is FeedCommentRequest =>
   typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-comment' &&
   typeof (m as { text?: unknown }).text === 'string' && typeof (m as { fingerprint?: unknown }).fingerprint === 'string';
 
+/** Background -> content script on facebook.com/groups/joins/: read the groups the user joined. Read-only. */
+export interface JoinedGroupsRequest {
+  type: 'cap/joined-groups';
+}
+
+export interface JoinedGroupsReply {
+  groups: FoundGroup[];
+  /** The count Facebook shows in the section heading, to compare with what was read. */
+  expected?: number;
+  problem?: { fatal: boolean; reason: string };
+}
+
+export const isJoinedGroupsRequest = (m: unknown): m is JoinedGroupsRequest =>
+  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/joined-groups';
+
 /** Background -> content script: read the group name from the loaded page. */
 export interface GroupNameRequest {
   type: 'cap/group-name';
@@ -81,7 +97,9 @@ export type RunCommand =
   | { type: 'cap/run/stop' }
   | { type: 'cap/run/reset' }
   /** Opens groups without a name one by one (read-only) and stores the names. */
-  | { type: 'cap/run/fetch-names' };
+  | { type: 'cap/run/fetch-names' }
+  /** Reads the user's joined groups from facebook.com/groups/joins/ (read-only) into `joinedScanItem`. */
+  | { type: 'cap/run/fetch-joined' };
 
 export interface CommandReply {
   ok: boolean;

@@ -8,6 +8,23 @@ from playwright.sync_api import sync_playwright
 MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
 <div role="button" id="open">Write something...</div>
 <script>
+// "Groups you joined" page: pending requests first, then the joined list, which grows when scrolled to the end.
+if (location.pathname.startsWith('/groups/joins')) {
+  document.title = 'Facebook';
+  document.body.innerHTML = '<div role="navigation"><a href="/groups/feed/">Bảng feed</a></div><div role="main"><div>' +
+    '<div><div><h2>Yêu cầu tham gia nhóm đang chờ (1)</h2><a href="/groups/mockpendingx/">Pending X</a></div></div>' +
+    '<div><div><h2>Tất cả các nhóm bạn đã tham gia (3)</h2><div id="joined"></div></div></div></div></div>';
+  const list = document.getElementById('joined');
+  const row = (slug, name) => { const d = document.createElement('div'); d.style.minHeight = '700px';
+    d.innerHTML = '<a href="/groups/' + slug + '/">' + name + '</a><a href="/groups/' + slug + '/" aria-label="Xem nhóm">Xem nhóm</a>'; list.appendChild(d); };
+  const later = [['mockjoined1', 'Nhóm A'], ['mockjoined2', 'Nhóm B']];
+  row('mock1', 'Mock One trên Facebook');
+  let loading = false;
+  addEventListener('scroll', () => {
+    if (loading || !later.length || scrollY + innerHeight < document.documentElement.scrollHeight - 200) return;
+    loading = true; setTimeout(() => { row(...later.shift()); loading = false; }, 500);
+  });
+} else {
 setTimeout(()=>{
   // Group feed, like Facebook's: items are plain children of [role=feed]; each has its own comment form.
   const slug = location.pathname.split('/')[2];
@@ -84,6 +101,7 @@ document.getElementById('open').onclick=()=>{
     fetch('/__posted?t='+encodeURIComponent(tb.textContent)+'&n='+d.querySelectorAll('img').length+'&p='+(d.querySelector('#rmprev')?1:0)+'&names='+encodeURIComponent(names)+'&i='+encodeURIComponent(tb.innerHTML.replace(/<div><br><\\/div>/g,'\\n').replace(/<div>/g,'\\n').replace(/<\\/div>/g,'').replace(/<br>/g,'\\n'))); d.remove();
     if (location.pathname.split('/')[2] === 'mockpending') { const n=document.createElement('div'); n.textContent='Your post is pending approval.'; document.body.appendChild(n); } };
 };
+}
 </script></body></html>"""
 
 ext, exe, prof = [os.path.realpath(a) for a in sys.argv[1:4]]
@@ -390,6 +408,20 @@ with sync_playwright() as p:
     pg.wait_for_selector('.badge--done', timeout=120000)
     assert len(posted) == count + 1, posted[count:]
     assert posted_meta[-1]['i'].strip() == short_post, posted_meta[-1]['i']
+    assert not errors
+
+    # Joined groups: the list is read from the mock "groups you joined" page (scrolled to load all), pending
+    # requests are left out, the group already listed is marked, and only the ticked group is added.
+    pg.click("button:text-is('Nhóm')")
+    pg.click("button:has-text('Lấy danh sách nhóm đã tham gia')")
+    pg.wait_for_selector('text=Tìm thấy 3 nhóm', timeout=90000)
+    assert pg.locator('text=2 nhóm chưa có trong danh sách').count() == 1, 'joined preview count'
+    assert pg.locator("td:text-is('Pending X')").count() == 0, 'a pending join request was listed'
+    pg.check("input[aria-label='Chọn Nhóm B']")
+    pg.click("button:has-text('Thêm 1 nhóm đã chọn')")
+    pg.wait_for_selector('text=Đã thêm 1 nhóm.')
+    assert pg.locator("td:text-is('Nhóm B')").count() == 2, 'Nhóm B should be in the preview and in the group list'
+    assert pg.locator("td:text-is('Nhóm A')").count() == 1, 'Nhóm A was added without being ticked'
     assert not errors
 
     # Overview: today's numbers are filled in and the notification option can be switched on.

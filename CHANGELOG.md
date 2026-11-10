@@ -20,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Removed: the `RECENT_ACTIVITY` scan, the post-page comment flow and the `cap/discover-posts` / `cap/comment` messages.
 
 ### Added
+- **Lấy danh sách nhóm đã tham gia** (tab Nhóm, opt-in): reads Facebook's "Tất cả các nhóm bạn đã tham gia" section on `facebook.com/groups/joins/` in an active tab of the current window, scrolling until the list stops growing (max 500 groups or 120 s, `LIMITS.maxJoinedGroups`, `joinedScanTimeoutMs`), then closes the tab and shows the user's previous tab again. Pending join requests and navigation links are left out. The result is only a preview (`local:joinedScan`): the user filters, ticks groups and adds them; groups already listed are marked and never changed. Read-only on Facebook: no clicks, no group is opened, no member data. No permission or host was added. Checked live on 2026-11-10 (owner's account): 144 of 144 groups read in 14 s, all named. A group stored by numeric id and the same group found by its named link cannot be matched as one.
 - Comment campaigns: opt-in **newest-posts mode** for groups where Facebook shows no post link or readable time. It opens the group sorted by newest posts and comments on up to 5 of the first feed posts that have their own comment editor. The post age is not checked, so the 24-hour rule does not apply in this mode and a pinned or old post can be commented. Posts are remembered by a short hash of author and text start. Unit tests and the local mock pass; not verified on live Facebook.
 
 ### Changed

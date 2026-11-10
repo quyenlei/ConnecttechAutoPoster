@@ -670,6 +670,53 @@ export function pressEnter(target: HTMLElement): void {
   for (const type of ['keydown', 'keypress', 'keyup']) target.dispatchEvent(new KeyboardEvent(type, init));
 }
 
+const JOINED_HEADING = /^(tất cả các nhóm bạn đã tham gia|all groups you['’]?ve joined|all the groups you['’]?ve joined)/i;
+const VIEW_GROUP = /^(xem nhóm|view group|truy cập nhóm|visit group)$/i;
+/** Paths under /groups/ that are Facebook pages, not groups. */
+const NOT_A_GROUP = new Set(['joins', 'feed', 'discover', 'create', 'notifications', 'search', 'your_groups', 'pending', 'membership']);
+
+/**
+ * The "Tất cả các nhóm bạn đã tham gia (N)" section of facebook.com/groups/joins/: the largest block around
+ * that heading which holds no other heading. This leaves out "Yêu cầu tham gia nhóm đang chờ" (requests not yet
+ * accepted) and the navigation. Structure measured live on 2026-11-10.
+ */
+export function findJoinedGroupsSection(doc: Document): HTMLElement | null {
+  const headings = [...doc.querySelectorAll<HTMLElement>('h1, h2, h3, [role="heading"]')];
+  const heading = headings.find((h) => JOINED_HEADING.test((h.textContent ?? '').trim().normalize('NFC')));
+  if (!heading) return null;
+  let section: HTMLElement = heading;
+  for (let node = heading.parentElement; node && node !== doc.body; node = node.parentElement) {
+    if (node.querySelectorAll('h1, h2, h3, [role="heading"]').length > 1) break;
+    section = node;
+  }
+  return section;
+}
+
+/** The count Facebook shows in the heading, "(144)". Null when it shows none. */
+export function joinedGroupsCount(doc: Document): number | null {
+  const heading = [...doc.querySelectorAll<HTMLElement>('h1, h2, h3, [role="heading"]')].find((h) => JOINED_HEADING.test((h.textContent ?? '').trim().normalize('NFC')));
+  const n = heading?.textContent?.match(/\((\d+)\)\s*$/)?.[1];
+  return n ? Number(n) : null;
+}
+
+/** Groups linked in the section, once each, in page order, with the first readable name. Read-only. */
+export function readJoinedGroups(section: ParentNode): Array<{ id: string; name: string | null }> {
+  const found = new Map<string, { id: string; name: string | null }>();
+  for (const link of section.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    let url: URL;
+    try { url = new URL(link.getAttribute('href') ?? '', 'https://www.facebook.com'); } catch { continue; }
+    if (url.protocol !== 'https:' || !FB_HOSTS.includes(url.hostname)) continue;
+    const id = url.pathname.match(/^\/groups\/([A-Za-z0-9._-]+)\/?$/)?.[1];
+    if (!id || NOT_A_GROUP.has(id.toLowerCase())) continue;
+    const text = (link.textContent ?? '').trim().replace(/\s+/g, ' ');
+    const name = text && !VIEW_GROUP.test(text) ? text.normalize('NFC').slice(0, 120) : null;
+    const entry = found.get(id);
+    if (!entry) found.set(id, { id, name });
+    else if (!entry.name && name) entry.name = name;
+  }
+  return [...found.values()];
+}
+
 /** Presses Escape, used to close a post dialog that Facebook opened for commenting. */
 export function pressEscape(target: HTMLElement): void {
   const init: KeyboardEventInit = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };

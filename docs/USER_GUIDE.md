@@ -61,6 +61,13 @@ The run bar is visible on every tab.
 - If Facebook holds the post for admin approval, the log shows **Chờ duyệt**. This counts as sent. Detection is not verified on live Facebook, so a pending post may still appear as **Đã đăng**.
 - The run stops by itself when: all groups are done, 5 groups fail in a row (paused), or Facebook shows a checkpoint / "temporarily blocked" message (halted). Resolve the problem on Facebook, wait, then **Xóa** (Clear) and start again.
 
+### Lấy danh sách nhóm đã tham gia
+Trong tab **Nhóm**, bấm **Lấy danh sách nhóm đã tham gia** và xác nhận. CAP mở trang “Nhóm bạn đã tham gia” của Facebook thành một tab trong cửa sổ bạn đang dùng, cuộn tới hết danh sách, rồi đóng tab và quay về tab cũ (tối đa 500 nhóm hoặc 2 phút). Chỉ mục “Tất cả các nhóm bạn đã tham gia” được đọc: nhóm đang chờ duyệt không được lấy, không mở nhóm nào, không bấm gì, không đọc thành viên.
+
+Kết quả hiện thành danh sách xem trước. Nhóm đã có ghi “Đã có”. Lọc theo tên, tick nhóm muốn dùng (hoặc **Chọn tất cả nhóm mới đang hiện**) rồi bấm **Thêm N nhóm đã chọn**. Danh sách không cho biết nhóm nào cho phép đăng hoặc bình luận, nên hãy chọn lọc; mỗi chiến dịch vẫn tối đa 100 nhóm. Một nhóm đã lưu bằng ID số có thể hiện thêm lần nữa nếu Facebook ghi nó bằng tên riêng.
+
+Đã kiểm tra trên Facebook thật một lần (10/11/2026): đọc đủ 144/144 nhóm trong 14 giây.
+
 ### Bình luận bài viết trong nhóm
 Trong trình soạn chiến dịch, chọn **Bình luận bài viết trong nhóm**, đặt số bài tối đa cho mỗi nhóm và nhập một hoặc nhiều phiên bản bình luận.
 
