@@ -17,6 +17,8 @@ export const commentedPostsItem = storage.defineItem<Record<string, number>>('lo
 export const commentTabItem = storage.defineItem<CommentTab | null>('local:commentTab', { fallback: null });
 /** Preview of the user's joined groups. Never exported in a backup. */
 export const joinedScanItem = storage.defineItem<JoinedScan | null>('local:joinedScan', { fallback: null });
+/** Epoch ms until which comment runs are locked after a checkpoint or block. Never exported in a backup. */
+export const commentLockItem = storage.defineItem<number | null>('local:commentLock', { fallback: null });
 /** Epoch ms of the last time due schedule slots were processed. */
 export const scheduleCheckItem = storage.defineItem<number | null>('local:scheduleCheck', { fallback: null });
 

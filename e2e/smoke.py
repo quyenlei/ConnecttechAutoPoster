@@ -142,6 +142,23 @@ with sync_playwright() as p:
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
               "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
+    # Test only: skip every wait between runs steps (post/comment delay, group break, Safety Break, retry) so the
+    # suite does not sit through them. It runs in the test's extension pages, not in the extension: as soon as a
+    # step is scheduled, it moves the stored run's `nextAt` to now and re-creates the alarm. Unpacked extensions may
+    # use alarms shorter than 30 s. Set `window.__capSkipWaits = false` on the page for a step that needs real waits.
+    ctx.add_init_script("""
+      if (location.protocol === 'chrome-extension:' && window.top === window) {
+        window.__capSkipWaits = true;
+        setInterval(async () => {
+          if (!window.__capSkipWaits) return;
+          const { run } = await chrome.storage.local.get('run');
+          if (!run || run.status !== 'running' || run.nextAt == null || run.nextAt - Date.now() < 1000) return;
+          const now = Date.now();
+          await chrome.storage.local.set({ run: { ...run, nextAt: now } });
+          await chrome.alarms.create('cap-next-post', { when: now + 100 });
+        }, 500);
+      }
+    """)
     pg = ctx.new_page(); errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.on("dialog", lambda d: d.accept())  # UI asks to confirm launching a run
@@ -271,6 +288,8 @@ with sync_playwright() as p:
     deadline = time.time() + 150
     while comments.count('Bình luận cuộn') < 2 and time.time() < deadline: time.sleep(1)
     print('scroll comments:', comment_authors[-2:], '| loads:', page_loads.count('/groups/mockscroll/') - loads_before)
+    if comment_authors[-2:] != ['Bình', 'Chi']:
+        pg.click("button:text-is('Nhật ký')"); print('\n'.join(pg.locator('tbody tr').all_inner_texts()[:8]))
     assert comment_authors[-2:] == ['Bình', 'Chi'], f"wrong posts commented: {comment_authors}"
     pg.wait_for_selector('.badge--done', timeout=60000)
     assert page_loads.count('/groups/mockscroll/') - loads_before == 1, f"group feed was loaded {page_loads.count('/groups/mockscroll/') - loads_before} times"
@@ -294,6 +313,7 @@ with sync_playwright() as p:
     pg.click("button:has-text('Chiến dịch')")
     pg.click("button:has-text('Tạo mới')")
     pg.fill('#c-name', 'Smoke tiếp tục'); pg.fill('#c-var-0', 'Hello Continue')
+    pg.evaluate('window.__capSkipWaits = false')  # Stop must be pressed during the real 30 s wait between the groups
     for lbl in ('Mock One', 'Mock Two'): pg.check(f"label:has-text('{lbl}') input")
     pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
     pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
@@ -302,6 +322,7 @@ with sync_playwright() as p:
     pg.wait_for_selector("button:has-text('Chạy tiếp 1 nhóm còn lại')")
     assert len(posted) == before + 1, posted
     pg.click("button:has-text('Chạy tiếp 1 nhóm còn lại')")
+    pg.evaluate('window.__capSkipWaits = true')
     pg.wait_for_selector('.badge--done', timeout=120000)
     assert posted[before:] == ['Hello Continue', 'Hello Continue'], posted
     wait_for_log('Chạy tiếp lượt đã dừng')

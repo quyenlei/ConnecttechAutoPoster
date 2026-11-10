@@ -160,6 +160,14 @@ describe('parseBackup: campaigns', () => {
     expect(result.backup.data.campaigns[0]?.groupIds).toHaveLength(LIMITS.maxGroupsPerCampaign);
   });
 
+  it('clamps comment timing to the comment limits and post timing to the post limits', () => {
+    const comment = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', commentsPerGroup: 3, delay: { minSec: 0, maxSec: 4 }, groupBreak: { minSec: 1, maxSec: 99999 } })] }));
+    expect(comment.backup.data.campaigns[0]).toMatchObject({ delay: { minSec: LIMITS.minCommentDelaySec, maxSec: 4 }, groupBreak: { minSec: LIMITS.minGroupBreakSec, maxSec: LIMITS.maxGroupBreakSec } });
+    const post = parseOk(wrap({ campaigns: [campaign({ delay: { minSec: 2, maxSec: 4 }, groupBreak: { minSec: 10, maxSec: 20 } })] }));
+    expect(post.backup.data.campaigns[0]?.delay).toEqual({ minSec: LIMITS.minDelaySec, maxSec: LIMITS.minDelaySec });
+    expect(post.backup.data.campaigns[0]).not.toHaveProperty('groupBreak');
+  });
+
   it('clamps comments per group for comment campaigns', () => {
     const high = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', commentsPerGroup: 9999 })] }));
     expect(high.backup.data.campaigns[0]).toMatchObject({ mode: 'comment', commentsPerGroup: LIMITS.maxCommentsPerGroup });

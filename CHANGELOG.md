@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.1] - 2026-11-10
+
+### Changed
+- **Comment campaigns are much faster (owner's decision, 2026-11-10).** Unit tests and the local mock pass; **not verified on live Facebook at this speed.**
+  - Own minimum wait between two comments: 2 s (`LIMITS.minCommentDelaySec`), default 2–4 s for new comment campaigns. Post campaigns keep 30 s. Existing comment campaigns keep the delay they were saved with. The editor warns when the wait is under 30 s.
+  - New `Campaign.groupBreak`: the wait when the run moves on to another group, at least 10 s, default 10–20 s (also for campaigns saved without one). A group with no usable post is now left after this break instead of immediately. Safety Break is off by default for new comment campaigns and unchanged for existing ones.
+  - The feed scan continues below the last post an earlier scan of the same page looked at, instead of reading the feed from the top for every comment.
+  - Waits under 30 s are timed in the running service worker (Chrome alarms cannot fire sooner); the alarm remains as the backup after a worker restart.
+  - Safety added with the speed: a comment campaign pauses after 2 failures in a row when the last one may have been sent but never showed up (was 5); a comment run halted by a checkpoint or block locks all comment runs for 24 hours (`local:commentLock`, never exported); comment limit wordings were added to the block detection (unverified on live Facebook).
+  - Fixed: a group the user is not a member of, or whose feed cannot be read, was opened once per comment slot (and could auto-pause the run by itself); it is now left at once.
+
 ## [0.6.0] - 2026-11-10
 
 ### Changed

@@ -130,6 +130,27 @@ let picked: { fingerprint: string; post: FeedPost } | null = null;
 /** Items whose post time was already looked for by hovering, so a later scan of the same page does not repeat it. */
 const hovered = new WeakSet<HTMLElement>();
 
+/**
+ * Where the scan of this page stands. The next comment in the same group continues below the last post
+ * looked at instead of reading the feed from the top again. A new page load starts with a fresh script.
+ */
+interface ScanProgress {
+  key: string;
+  /** Feed items already looked at. */
+  items: WeakSet<HTMLElement>;
+  /** Feed items looked at, for the trace. */
+  index: number;
+  /** Real posts looked at since the page loaded. */
+  posts: number;
+  reasons: (SkipReason | null)[];
+}
+let progress: ScanProgress | null = null;
+
+function scanProgress(key: string): ScanProgress {
+  if (progress?.key !== key) progress = { key, items: new WeakSet(), index: 0, posts: 0, reasons: [] };
+  return progress;
+}
+
 /** Scrolls to the end of the loaded feed and waits for Facebook to append more posts. */
 async function loadMore(count: number): Promise<boolean> {
   window.scrollTo(0, document.documentElement.scrollHeight);
@@ -155,9 +176,10 @@ async function revealTime(item: HTMLElement, read: () => FeedPost): Promise<Feed
 }
 
 /**
- * Walks the group feed from the top, one post at a time: brings each into view (Facebook renders posts only
- * near the viewport), reads it, and scrolls to load more when the loaded ones run out. Stops at the first
- * post that can be commented, or when the limits in `LIMITS` are reached. Nothing is typed here.
+ * Walks the group feed downwards, one post at a time, starting below the last post an earlier scan of this
+ * page looked at: brings each into view (Facebook renders posts only near the viewport), reads it, and scrolls
+ * to load more when the loaded ones run out. Stops at the first post that can be commented, or when the
+ * limits in `LIMITS` are reached. Nothing is typed here.
  */
 async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
   picked = null;
@@ -171,26 +193,29 @@ async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
   }
   const tried = new Set(request.tried);
   const structured = readStructuredPostTimes(document, request.groupId);
-  const limit = request.mode === 'newest' ? LIMITS.newestFeedWindow : LIMITS.feedScanMaxPosts;
+  const scan = scanProgress(`${request.groupId}:${request.mode}`);
+  const { reasons } = scan;
   const counts = emptyCounts();
-  const reasons: (SkipReason | null)[] = [];
   const trace: string[] = [];
   let myName: string | null = null;
   let seen = 0;
-  let index = 0;
   let timedOut = false;
-  while (seen < limit) {
+  // Newest mode: the window counts from the top of the feed, over every scan of this page.
+  const withinLimit = () => (request.mode === 'newest' ? scan.posts < LIMITS.newestFeedWindow : seen < LIMITS.feedScanMaxPosts);
+  while (withinLimit()) {
     if (Date.now() > deadline) { timedOut = true; break; }
+    if (request.mode === 'recent' && feedIsExhausted(reasons)) break;
     const items = findFeedItems(document);
-    const item = items[index];
+    const item = items.find((candidate) => !scan.items.has(candidate));
     if (!item) {
       if (!(await loadMore(items.length))) break;
       continue;
     }
-    index++;
+    scan.items.add(item);
+    const index = scan.index++;
     item.scrollIntoView({ block: 'center' });
     if (!(await waitFor(() => isFeedItemRendered(item), LIMITS.feedRenderWaitMs, 200))) {
-      trace.push(`#${index - 1}:chưa hiển thị`);
+      trace.push(`#${index}:chưa hiển thị`);
       continue;
     }
     myName ??= findMyName(document);
@@ -199,21 +224,21 @@ async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
     // Banners and section headers in the feed have neither text nor a way to comment.
     if (!post.fingerprint && !post.url && !post.editor && !post.commentAction) continue;
     seen++;
+    scan.posts++;
     let reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
     if (!post.age && !hovered.has(item) && (reason === 'age-unknown' || reason === null)) {
       post = await revealTime(item, read);
       reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
     }
     reasons.push(reason);
-    trace.push(`#${index - 1}:${post.fingerprint ?? '-'}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
+    trace.push(`#${index}:${post.fingerprint ?? '-'}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
     const id = post.fingerprint ?? post.url;
     if (reason === null && id) {
       picked = { fingerprint: id, post };
       const age = post.age ? `, đăng khoảng ${Math.max(1, Math.round(post.age.minAgeMs / 60_000))} phút trước${post.age.label ? ` (nhãn: "${post.age.label}")` : ''}` : ', không rõ giờ đăng';
-      return { fingerprint: id, keys: commentKeys(request.groupId, post), trace, diagnostic: `Chọn bài thứ ${seen} trong feed${age}.` };
+      return { fingerprint: id, keys: commentKeys(request.groupId, post), trace, diagnostic: `Chọn bài thứ ${scan.posts} trong feed${age}.` };
     }
     counts[reason ?? 'unidentified']++;
-    if (request.mode === 'recent' && feedIsExhausted(reasons)) break;
   }
   const notes = [
     timedOut ? 'Hết thời gian quét.' : '',

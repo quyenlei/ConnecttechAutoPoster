@@ -26,7 +26,7 @@ Run typecheck + test before claiming work done; run test:e2e after touching back
 
 ## Hard rules
 1. **Never** run automated posting against real Facebook or the user's real groups. Tests use the local mock only. Do not weaken the DNS block in `e2e/smoke.py`.
-2. **Never** weaken safety: min delay 30 s, Safety Break, auto-pause after 5 failures, halt on checkpoint/blocked, skip non-member/no-permission. Never add detection-evasion features.
+2. **Never** weaken safety: min delay 30 s for posts, Safety Break, auto-pause after 5 failures, halt on checkpoint/blocked, skip non-member/no-permission. Never add detection-evasion features. One owner-approved exception (2026-11-10): comment campaigns may wait as little as 2 s between comments (`LIMITS.minCommentDelaySec`), with a 10 s minimum break between groups; in return they pause after 2 unconfirmed comments in a row and lock comment runs for 24 hours after a checkpoint/block. Do not lower these further or extend the exception to posts without the owner asking.
 3. No remote calls, analytics, remote code, or eval. No new permission or host without updating `docs/SAFETY_AND_PRIVACY.md` and `CHANGELOG.md`.
 4. Do not read, store or send Facebook cookies/tokens.
 5. State lives in `chrome.storage.local` only; the service worker must stay restart-safe (use alarms, not long timers).

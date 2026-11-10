@@ -6,9 +6,9 @@ import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { describeRunEnd } from '@/lib/notify';
-import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
+import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -43,9 +43,31 @@ async function restoreSchedule(): Promise<void> {
   if (run.status === 'running' && run.nextAt !== null) await schedule(run.nextAt);
 }
 
+/** Chrome fires an alarm no sooner than 30 s after it was created. */
+const ALARM_FLOOR_MS = 30_000;
+let shortTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The alarm is what survives a service worker restart. A wait shorter than Chrome's alarm floor (comment
+ * campaigns) is also timed in the running worker, which stays alive that long; whichever fires first runs
+ * the step, and `runStep` ignores a call that comes before `nextAt`.
+ */
 async function schedule(at: number | null): Promise<void> {
+  clearTimeout(shortTimer);
+  shortTimer = undefined;
   await browser.alarms.clear(ALARM);
-  if (at !== null) await browser.alarms.create(ALARM, { when: Math.max(at, Date.now() + 1000) });
+  if (at === null) return;
+  const wait = at - Date.now();
+  await browser.alarms.create(ALARM, { when: Math.max(at, Date.now() + 1000) });
+  if (wait < ALARM_FLOOR_MS) shortTimer = setTimeout(() => void runStep(), Math.max(0, wait));
+}
+
+/** Null when a comment run may start; otherwise why not (locked after a checkpoint or block). */
+async function commentLockProblem(campaign: Campaign): Promise<string | null> {
+  if (campaign.mode !== 'comment') return null;
+  const until = await commentLockItem.getValue();
+  if (!isCommentLocked(until, Date.now())) return null;
+  return `Facebook đã cảnh báo hoặc chặn trong lượt bình luận trước. Chiến dịch bình luận bị khóa đến ${new Date(until).toLocaleString('vi-VN')}.`;
 }
 
 const hhmm = (ts: number) => new Date(ts).toTimeString().slice(0, 5);
@@ -108,7 +130,7 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
   const campaign = (await campaignsItem.getValue()).find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-  const problem = validateCampaign(campaign, await campaignsItem.getValue());
+  const problem = validateCampaign(campaign, await campaignsItem.getValue()) ?? (await commentLockProblem(campaign));
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
   await closeCommentWindow();
@@ -144,7 +166,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       if (run.status !== 'stopped') return { ok: false, error: 'Chỉ chạy tiếp được lượt đã dừng.' };
       const campaign = await currentCampaign(run);
       if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-      const problem = validateCampaign(campaign, await campaignsItem.getValue());
+      const problem = validateCampaign(campaign, await campaignsItem.getValue()) ?? (await commentLockProblem(campaign));
       if (problem) return { ok: false, error: problem };
       const next = continueRun(run, campaign, await logsItem.getValue(), Date.now());
       await runItem.setValue(next);
@@ -209,6 +231,11 @@ async function runStep(): Promise<void> {
   try {
     const run = await runItem.getValue();
     if (run.status !== 'running') return;
+    // Called early (a short timer and the alarm both exist): wait for the real time.
+    if (run.nextAt !== null && run.nextAt - Date.now() > 250) {
+      await schedule(run.nextAt);
+      return;
+    }
     const campaign = await currentCampaign(run);
     const groupId = run.queue[0];
     if (!campaign || !groupId) {
@@ -246,6 +273,11 @@ async function runStep(): Promise<void> {
     await runItem.setValue(state);
     if (state.status !== 'running') await closeCommentWindow();
     if (state.status === 'halted') await disableAllSchedules(campaign.id);
+    if (state.status === 'halted' && campaign.mode === 'comment') {
+      const until = commentLockUntil(Date.now());
+      await commentLockItem.setValue(until);
+      await log(campaign.id, null, 'info', `Chiến dịch bình luận bị khóa đến ${new Date(until).toLocaleString('vi-VN')}. Hãy xử lý cảnh báo trên Facebook và không bình luận thêm trong thời gian này.`);
+    }
     await schedule(state.status === 'running' ? state.nextAt : null);
     await notifyRunEnd(latest.status, state, campaign);
   } finally {
@@ -458,7 +490,8 @@ async function commentInGroup(group: Group, text: string, run: RunState, campaig
       ownTexts: campaign.variations.map((v) => v.trim()).filter(Boolean),
     };
     const pick = (await withTimeout(sendWithRetry(tabId, pickRequest), LIMITS.feedScanTimeoutMs + 30_000, 'Hết thời gian quét bài trong nhóm.')) as FeedPickReply;
-    if (pick.problem) return pick.problem;
+    // A group we are not a member of, or whose feed cannot be read, is left at once instead of once per slot.
+    if (pick.problem) return pick.problem.kind === 'fatal' ? pick.problem : { ...pick.problem, skipRemainingGroup: true };
     if (!pick.fingerprint || !pick.keys?.length) {
       return { kind: 'skipped', skipRemainingGroup: true, reason: pick.diagnostic ?? 'Không có bài phù hợp để bình luận.' };
     }

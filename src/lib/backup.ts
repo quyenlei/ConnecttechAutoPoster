@@ -1,4 +1,4 @@
-import { clampDelay, recommendDelay } from './delay';
+import { clampDelay, clampGroupBreak, recommendDelay } from './delay';
 import { canonicalGroupUrl, parseGroupSlug } from './groups';
 import { DEFAULT_SAFETY_BREAK, LIMITS } from './limits';
 import { sanitizeImage, totalImageBytes } from './images';
@@ -156,9 +156,10 @@ function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: n
     .filter((v): v is string => typeof v === 'string')
     .slice(0, LIMITS.maxVariations)
     .map((v) => v.slice(0, LIMITS.maxPostLength));
+  const mode = raw.mode === 'comment' ? 'comment' : undefined;
   const delay = isObject(raw.delay)
-    ? clampDelay({ minSec: Number(raw.delay.minSec), maxSec: Number(raw.delay.maxSec) })
-    : recommendDelay(groupIds.length);
+    ? clampDelay({ minSec: Number(raw.delay.minSec), maxSec: Number(raw.delay.maxSec) }, mode)
+    : recommendDelay(groupIds.length, mode);
 
   const campaign: Campaign = {
     id,
@@ -172,6 +173,9 @@ function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: n
   if (raw.mode === 'comment') {
     campaign.mode = 'comment';
     campaign.commentsPerGroup = clampInt(raw.commentsPerGroup, 1, LIMITS.maxCommentsPerGroup, 1);
+    if (isObject(raw.groupBreak)) {
+      campaign.groupBreak = clampGroupBreak({ minSec: Number(raw.groupBreak.minSec), maxSec: Number(raw.groupBreak.maxSec) });
+    }
     if (raw.commentNewestPosts === true) {
       campaign.commentNewestPosts = true;
       campaign.commentsPerGroup = Math.min(campaign.commentsPerGroup, LIMITS.maxNewestPostComments);

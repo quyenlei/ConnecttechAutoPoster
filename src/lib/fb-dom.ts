@@ -30,6 +30,14 @@ export const HINTS = {
     'chúng tôi hạn chế tần suất',
     'chúng tôi hạn chế số lần',
     'bạn đang bị hạn chế đăng',
+    // Comment limits. Wording unverified on live Facebook.
+    "you can't comment right now",
+    'you can’t comment right now',
+    "you're temporarily restricted from commenting",
+    'you’re temporarily restricted from commenting',
+    'bạn hiện không thể bình luận',
+    'bạn tạm thời không thể bình luận',
+    'bạn đang bị hạn chế bình luận',
   ],
   /** Shown after posting in a group where admins approve posts first. Unverified on live Facebook. */
   pending: [

@@ -14,7 +14,7 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 |---|---|
 | Groups | Paste group links (one per line, optional name), or import the groups you joined from Facebook (opt-in, preview, you pick); duplicates and non-group links rejected |
 | Campaigns | Several saved campaigns, 1–10 post versions rotating across groups, up to 100 groups |
-| Timing | Random wait range (min 30 s), recommended delay by group count, warnings for risky settings, time estimate |
+| Timing | Random wait range (min 30 s for posts; comment campaigns min 2 s plus a break between groups), recommended delay by group count, warnings for risky settings, time estimate |
 | Safety | Safety Break every N posts, auto-pause after 5 failures in a row, immediate halt on checkpoint or "temporarily blocked", skip groups you cannot post in |
 | Run control | Pause, Resume, Stop, continue a stopped run, one retry after temporary errors, live countdown, progress, survives browser/service-worker restarts |
 | Activity | Filter by status (including posts waiting for admin approval), export CSV (spreadsheet-formula safe), clear |

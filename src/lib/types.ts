@@ -46,6 +46,8 @@ export interface Campaign {
   variations: string[];
   groupIds: string[];
   delay: DelayRange;
+  /** Comment campaigns only: wait in seconds when the run moves on to another group. Default when missing. */
+  groupBreak?: DelayRange;
   safetyBreak: SafetyBreak;
   schedule?: CampaignSchedule;
   /** Post campaigns only. Older campaigns have none. */
@@ -122,7 +124,10 @@ export type PostOutcome =
   /** Submitted, but the group needs admin approval before the post is visible. */
   | { kind: 'pending' }
   | { kind: 'skipped'; reason: string; skipRemainingGroup?: boolean }
-  /** `retryable` is only set when nothing was submitted, so a second attempt cannot double-post. */
-  | { kind: 'failed'; reason: string; retryable?: boolean }
+  /**
+   * `retryable` is only set when nothing was submitted, so a second attempt cannot double-post.
+   * `skipRemainingGroup`: the group itself cannot be used (comment campaigns), so its other slots are dropped.
+   */
+  | { kind: 'failed'; reason: string; retryable?: boolean; skipRemainingGroup?: boolean }
   /** Facebook asked for a checkpoint / rate limit warning: stop everything. */
   | { kind: 'fatal'; reason: string };

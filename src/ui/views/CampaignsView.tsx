@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { delayWarning, formatDuration, recommendDelay } from '@/lib/delay';
+import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, recommendDelay } from '@/lib/delay';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
-import { DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
+import { DEFAULT_GROUP_BREAK, DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
 import { isActive } from '@/lib/run-engine';
 import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/schedule';
 import { hasUnknownPlaceholder } from '@/lib/template';
@@ -59,13 +59,28 @@ export function CampaignsView() {
   }, [campaigns, draft]);
   const saved = draft ? campaigns.some((c) => c.id === draft.id) : false;
   const busy = run ? isActive(run) : false;
-  const warning = draft ? delayWarning(draft.delay, draft.groupIds.length) : null;
+  const warning = draft ? delayWarning(draft.delay, draft.groupIds.length, draft.mode) : null;
+  const groupBreak = draft?.groupBreak ?? DEFAULT_GROUP_BREAK;
   const totalSec = useMemo(() => {
     if (!draft) return 0;
-    const attempts = draft.groupIds.length * (draft.mode === 'comment' ? (draft.commentsPerGroup ?? 0) : 1);
-    if (attempts < 2) return 0;
-    return ((draft.delay.minSec + draft.delay.maxSec) / 2) * (attempts - 1);
+    const average = (r: { minSec: number; maxSec: number }) => (r.minSec + r.maxSec) / 2;
+    if (draft.mode !== 'comment') return draft.groupIds.length < 2 ? 0 : average(draft.delay) * (draft.groupIds.length - 1);
+    const groupCount = draft.groupIds.length;
+    const perGroup = draft.commentsPerGroup ?? 0;
+    if (groupCount * perGroup < 2) return 0;
+    // Waits only: a short one between comments of a group, a longer one between groups.
+    return average(draft.delay) * groupCount * Math.max(0, perGroup - 1) + average(draft.groupBreak ?? DEFAULT_GROUP_BREAK) * (groupCount - 1);
   }, [draft]);
+
+  /** Each kind of campaign starts from its own timing defaults. */
+  function changeMode(mode: 'post' | 'comment') {
+    if (!draft || (draft.mode ?? 'post') === mode) return;
+    if (mode === 'comment') {
+      patch({ mode, delay: recommendDelay(draft.groupIds.length, 'comment'), groupBreak: { ...DEFAULT_GROUP_BREAK }, safetyBreak: { ...draft.safetyBreak, enabled: false } });
+    } else {
+      patch({ mode, delay: recommendDelay(draft.groupIds.length || 10), safetyBreak: { ...DEFAULT_SAFETY_BREAK } });
+    }
+  }
 
   const schedule = draft?.schedule ?? DEFAULT_SCHEDULE;
   const scheduleTimes = normalizeTimes(schedule.times);
@@ -151,19 +166,17 @@ export function CampaignsView() {
       setMessage({ text: imageProblem, danger: true });
       return null;
     }
-    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, ...base } = draft;
+    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, groupBreak: _groupBreak, ...base } = draft;
     const clean: Campaign = {
       ...base,
       // Images and the link preview option only apply to post campaigns.
       ...(isPost && images.length > 0 ? { images } : {}),
       ...(isPost && draft.removeLinkPreview ? { removeLinkPreview: true } : {}),
       ...(!isPost && draft.commentNewestPosts ? { commentNewestPosts: true } : {}),
+      ...(!isPost ? { groupBreak: clampGroupBreak(draft.groupBreak) } : {}),
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
       variations: draft.variations.filter((v) => v.trim()).length ? draft.variations.filter((v) => v.trim()) : [''],
-      delay: {
-        minSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec),
-        maxSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec, draft.delay.maxSec),
-      },
+      delay: clampDelay(draft.delay, draft.mode),
       safetyBreak: {
         ...draft.safetyBreak,
         everyPosts: Math.min(LIMITS.maxSafetyBreakEvery, Math.max(1, draft.safetyBreak.everyPosts)),
@@ -225,7 +238,7 @@ export function CampaignsView() {
 
             <div className="field">
               <label className="field__label" htmlFor="c-mode">Loại chiến dịch</label>
-              <select id="c-mode" className="field__control" value={draft.mode ?? 'post'} onChange={(e) => patch({ mode: e.target.value === 'comment' ? 'comment' : 'post' })} disabled={busy && run?.campaignId === draft.id}>
+              <select id="c-mode" className="field__control" value={draft.mode ?? 'post'} onChange={(e) => changeMode(e.target.value === 'comment' ? 'comment' : 'post')} disabled={busy && run?.campaignId === draft.id}>
                 <option value="post">Đăng bài vào nhóm</option>
                 <option value="comment">Bình luận bài viết trong nhóm</option>
               </select>
@@ -366,19 +379,42 @@ export function CampaignsView() {
               <div className="campaigns__row">
                 <div className="field">
                   <label className="field__label" htmlFor="c-min">Chờ tối thiểu (giây)</label>
-                  <input id="c-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.minSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
+                  <input id="c-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={minDelayFor(draft.mode)} max={LIMITS.maxDelaySec} value={draft.delay.minSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
                 </div>
                 <div className="field">
                   <label className="field__label" htmlFor="c-max">Chờ tối đa (giây)</label>
-                  <input id="c-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.maxSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
+                  <input id="c-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={minDelayFor(draft.mode)} max={LIMITS.maxDelaySec} value={draft.delay.maxSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
                 </div>
               </div>
-              <p className="field__hint">
-                Tối thiểu cho phép: {LIMITS.minDelaySec} giây. Khuyến nghị cho {draft.groupIds.length || 10} nhóm:{' '}
-                {recommendDelay(draft.groupIds.length || 10).minSec}–{recommendDelay(draft.groupIds.length || 10).maxSec} giây.{' '}
-                <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length || 10) })}>Dùng mức khuyến nghị</button>
-              </p>
+              {draft.mode === 'comment' ? (
+                <p className="field__hint">
+                  Thời gian chờ giữa hai bình luận trong cùng một nhóm. Tối thiểu cho phép: {LIMITS.minCommentDelaySec} giây.{' '}
+                  <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length, 'comment') })}>Dùng mức mặc định</button>
+                </p>
+              ) : (
+                <p className="field__hint">
+                  Tối thiểu cho phép: {LIMITS.minDelaySec} giây. Khuyến nghị cho {draft.groupIds.length || 10} nhóm:{' '}
+                  {recommendDelay(draft.groupIds.length || 10).minSec}–{recommendDelay(draft.groupIds.length || 10).maxSec} giây.{' '}
+                  <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length || 10) })}>Dùng mức khuyến nghị</button>
+                </p>
+              )}
               {warning === 'too-fast' && <p className="notice" role="alert">Tốc độ này nhanh hơn nhiều so với khuyến nghị và có thể khiến tài khoản của bạn bị hạn chế.</p>}
+              {warning === 'fast-comment' && <p className="notice" role="alert">Bình luận cách nhau dưới {LIMITS.minDelaySec} giây dễ bị Facebook coi là spam và có thể khiến tài khoản bị hạn chế. CAP tạm dừng sau {LIMITS.maxUnconfirmedComments} bình luận liên tiếp không hiện lên, và khóa chiến dịch bình luận {LIMITS.commentLockHours} giờ nếu Facebook cảnh báo hoặc chặn.</p>}
+              {draft.mode === 'comment' && (
+                <>
+                  <div className="campaigns__row">
+                    <div className="field">
+                      <label className="field__label" htmlFor="c-group-min">Nghỉ khi chuyển nhóm, tối thiểu (giây)</label>
+                      <input id="c-group-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minGroupBreakSec} max={LIMITS.maxGroupBreakSec} value={groupBreak.minSec || ''} onChange={(e) => patch({ groupBreak: { ...groupBreak, minSec: num(e.target.value) } })} />
+                    </div>
+                    <div className="field">
+                      <label className="field__label" htmlFor="c-group-max">Nghỉ khi chuyển nhóm, tối đa (giây)</label>
+                      <input id="c-group-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minGroupBreakSec} max={LIMITS.maxGroupBreakSec} value={groupBreak.maxSec || ''} onChange={(e) => patch({ groupBreak: { ...groupBreak, maxSec: num(e.target.value) } })} />
+                    </div>
+                  </div>
+                  <p className="field__hint">Tối thiểu cho phép: {LIMITS.minGroupBreakSec} giây.</p>
+                </>
+              )}
               {warning === 'fixed-time' && <p className="notice">Khoảng thời gian ngẫu nhiên trông tự nhiên hơn một mốc cố định.</p>}
 
               <label className="campaigns__group">
