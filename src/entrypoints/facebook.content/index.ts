@@ -236,7 +236,7 @@ async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
     if (reason === null && id) {
       picked = { fingerprint: id, post };
       const age = post.age ? `, đăng khoảng ${Math.max(1, Math.round(post.age.minAgeMs / 60_000))} phút trước${post.age.label ? ` (nhãn: "${post.age.label}")` : ''}` : ', không rõ giờ đăng';
-      return { fingerprint: id, keys: commentKeys(request.groupId, post), trace, diagnostic: `Chọn bài thứ ${scan.posts} trong feed${age}.` };
+      return { fingerprint: id, keys: commentKeys(request.groupId, post), post: { url: post.url, author: post.author, text: post.body.slice(0, 1000), age: post.age?.label ?? null }, trace, diagnostic: `Chọn bài thứ ${scan.posts} trong feed${age}.` };
     }
     counts[reason ?? 'unidentified']++;
   }

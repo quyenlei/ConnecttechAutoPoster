@@ -34,6 +34,7 @@ export interface FeedPickRequest {
 
 export interface FeedPickReply {
   fingerprint?: string;
+  post?: { url: string | null; author: string; text: string; age: string | null };
   /** Keys to reserve in `commentedPosts` for the chosen post. */
   keys?: string[];
   diagnostic?: string;

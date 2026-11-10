@@ -40,7 +40,7 @@ export function Chatbox() {
     const campaign = campaigns.find((c) => c.id === campaignId);
     if (!campaign) return;
     const what = campaign.mode === 'comment'
-      ? `bình luận tối đa ${campaign.commentsPerGroup ?? 1} bài trong mỗi nhóm đã chọn`
+      ? `${campaign.safeMode ? 'chỉ quét, không bình luận' : 'bình luận'} tối đa ${campaign.commentsPerGroup ?? 1} bài trong mỗi nhóm đã chọn`
       : `đăng vào ${campaign.groupIds.length} nhóm, bài đầu tiên đăng ngay`;
     const question = `Bắt đầu "${campaign.name}": ${what}? CAP chạy ngay trên tab này: tab sẽ tự chuyển qua từng nhóm và không đóng khi xong.`;
     if (!(await confirm(question, { okLabel: 'Bắt đầu chạy' }))) return;

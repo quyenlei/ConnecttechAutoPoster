@@ -54,6 +54,10 @@ Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
    - **Safety Break**: pause for N minutes after every M posts (default every 10 posts, 15 min).
 5. **Lưu chiến dịch** (Save campaign) or **Lưu và chạy** (Save and launch).
 
+### Safe Mode cho chiến dịch bình luận
+
+Chọn loại **Bình luận bài viết trong nhóm**, bật **Safe Mode — chỉ lấy bài, không bình luận**, chọn nhóm và số bài tối đa, rồi lưu và chạy. Không cần nhập nội dung bình luận. Tool vẫn dùng điều kiện chọn bài của chiến dịch, nhưng chỉ lưu kết quả trên thiết bị, không gửi bình luận và không đánh dấu bài là đã bình luận. Danh sách kết quả hiện trong chiến dịch, kèm nội dung đọc được và liên kết khi Facebook cung cấp. Mỗi lượt Safe Mode mới thay thế danh sách trước; danh sách này không nằm trong bản sao lưu. Cấu hình Safe Mode của chiến dịch được sao lưu.
+
 ## 3. Run
 
 **Hộp chat trên Facebook:** trên mọi trang Facebook có một nút tròn màu xanh ở góc dưới bên phải. Bấm vào để mở hộp chat Auto Poster: trạng thái lượt chạy (Tạm dừng / Tiếp tục / Dừng), các hoạt động mới nhất hiện như tin nhắn, và ô chọn chiến dịch với nút **Chạy**. Trên thanh tiêu đề: nút mũi tên mở rộng để xem cài đặt đầy đủ ngay trong hộp, nút gạch ngang để thu nhỏ, nút X để đóng. Trạng thái mở/thu nhỏ được nhớ ở mọi tab Facebook.

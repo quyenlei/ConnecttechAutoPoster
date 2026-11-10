@@ -18,7 +18,7 @@ export function RunBar({ compact = false }: { compact?: boolean }) {
   const campaign = campaigns?.find((c) => c.id === run.campaignId);
   const countdown = run.status === 'running' && run.nextAt ? Math.max(0, Math.round((run.nextAt - now) / 1000)) : null;
 
-  const unit = campaign?.mode === 'comment' ? 'lượt bình luận' : 'nhóm';
+  const unit = campaign?.mode === 'comment' ? (campaign.safeMode ? 'bài quét' : 'lượt bình luận') : 'nhóm';
 
   async function continuePrevious() {
     if (!(await confirm(`Chạy tiếp ${run?.queue.length ?? 0} ${unit} còn lại? Nhóm đã đăng ở lượt trước sẽ được bỏ qua. Lượt tiếp theo bắt đầu sau một khoảng chờ ngẫu nhiên.`, { okLabel: 'Chạy tiếp' }))) return;

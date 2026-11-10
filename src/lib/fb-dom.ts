@@ -551,6 +551,8 @@ export function postFingerprint(author: string, body: string): string {
 
 export interface FeedPost {
   element: HTMLElement;
+  author: string;
+  body: string;
   /** Null when neither author nor text could be read. */
   fingerprint: string | null;
   url: string | null;
@@ -576,6 +578,8 @@ export function readFeedPost(item: HTMLElement, ctx: FeedReadContext): FeedPost 
   const url = readPostUrl(item, ctx.groupId);
   return {
     element: item,
+    author,
+    body,
     fingerprint: author || body ? postFingerprint(author, body) : null,
     url,
     age: readPostAge(item, ctx.now, ctx.structured, url),
