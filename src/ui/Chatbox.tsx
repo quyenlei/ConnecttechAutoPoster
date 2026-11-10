@@ -52,6 +52,7 @@ export function Chatbox() {
     <main className="chatbox__app">
       <UpdateNotice compact />
       <RunBar compact />
+      <div className="chatbox__feed-title">Hoạt động gần đây</div>
       <ol className="chatbox__feed" ref={feedRef} aria-label="Hoạt động gần đây" aria-live="polite">
         {recent.length === 0 && <li className="chatbox__empty">Chưa có hoạt động nào. Chọn chiến dịch bên dưới rồi bấm Chạy.</li>}
         {recent.map((entry) => (

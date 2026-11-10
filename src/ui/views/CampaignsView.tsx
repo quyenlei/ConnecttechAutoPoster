@@ -240,7 +240,8 @@ export function CampaignsView() {
           {campaigns.map((c) => (
             <li key={c.id} className="campaigns__list-item">
               <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => void select(c)}>
-                {c.name}
+                <span className="campaigns__list-title">{c.name}</span>
+                <span className="campaigns__list-meta">{c.mode === 'comment' ? (c.safeMode ? 'Safe Mode' : 'Bình luận') : 'Đăng bài'} · {c.groupIds.length} nhóm</span>
               </button>
               <button className="button button--small button--danger" type="button" onClick={() => remove(c.id, c.name)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
                 Xóa
@@ -251,7 +252,8 @@ export function CampaignsView() {
       </section>
 
       {draft ? (
-        <section className="card" aria-label="Trình soạn chiến dịch">
+        <section className="card campaigns__editor" aria-label="Trình soạn chiến dịch">
+          <div className="campaigns__editor-head"><div><h2>Thiết lập chiến dịch</h2><p>Chuẩn bị nội dung, chọn nhóm và thời gian chạy.</p></div><span className="campaigns__editor-mode">{draft.mode === 'comment' ? 'Bình luận' : 'Đăng bài'}</span></div>
           <div className="card__body">
             <div className="field">
               <label className="field__label" htmlFor="c-name">Tên chiến dịch</label>
@@ -266,13 +268,13 @@ export function CampaignsView() {
               </select>
             </div>
             {draft.mode === 'comment' && (
-              <div className="field">
-            {draft.mode === 'comment' && (
               <div className="campaigns__section">
                 <label className="campaigns__group"><input type="checkbox" checked={draft.safeMode === true} onChange={(e) => patch({ safeMode: e.target.checked })} /> <strong>Safe Mode — chỉ lấy bài, không bình luận</strong></label>
                 <p className="field__hint">Quét và lưu các bài phù hợp ở bên dưới. Không nhập hoặc gửi bình luận, không đánh dấu bài là đã bình luận. Mỗi lượt quét mới thay thế kết quả Safe Mode trước đó.</p>
               </div>
             )}
+            {draft.mode === 'comment' && (
+              <div className="field">
                 <label className="field__label" htmlFor="c-comment-limit">Số bài tối đa mỗi nhóm</label>
                 <input id="c-comment-limit" className="field__control" type="number" min={1} max={draft.commentNewestPosts ? LIMITS.maxNewestPostComments : LIMITS.maxCommentsPerGroup} value={draft.commentsPerGroup ?? 5} onChange={(e) => patch({ commentsPerGroup: num(e.target.value) })} />
                 <span className="field__hint">{draft.commentNewestPosts
@@ -287,8 +289,6 @@ export function CampaignsView() {
               </div>
             )}
 
-            <div className="campaigns__variation">
-              <h3>{draft.mode === 'comment' ? 'Nội dung bình luận' : 'Nội dung bài đăng'}</h3>
             {draft.mode === 'comment' && draft.safeMode && safeScan?.campaignId === draft.id && (
               <div className="campaigns__section">
                 <h3>Bài đã tìm thấy ({safeScan.posts.length})</h3>
@@ -301,9 +301,11 @@ export function CampaignsView() {
                 )}
               </div>
             )}
+            <div className="campaigns__variation">
+              <h3>{draft.mode === 'comment' ? 'Nội dung bình luận' : 'Nội dung bài đăng'}</h3>
+              {draft.mode === 'comment' && draft.safeMode && <p className="field__hint">Không bắt buộc khi bật Safe Mode; nội dung này sẽ không được gửi.</p>}
               {draft.variations.map((v, i) => (
                 <div className="field" key={i}>
-              {draft.mode === 'comment' && draft.safeMode && <p className="field__hint">Không bắt buộc khi bật Safe Mode; nội dung này sẽ không được gửi.</p>}
                   <label className="field__label" htmlFor={`c-var-${i}`}>Phiên bản {i + 1}</label>
                   <textarea
                     id={`c-var-${i}`}
