@@ -163,6 +163,10 @@ describe('parseBackup: campaigns', () => {
   it('clamps comments per group for comment campaigns', () => {
     const high = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', commentsPerGroup: 9999 })] }));
     expect(high.backup.data.campaigns[0]).toMatchObject({ mode: 'comment', commentsPerGroup: LIMITS.maxCommentsPerGroup });
+    const newest = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', commentsPerGroup: 50, commentNewestPosts: true })] }));
+    expect(newest.backup.data.campaigns[0]).toMatchObject({ commentNewestPosts: true, commentsPerGroup: LIMITS.maxNewestPostComments });
+    const notComment = parseOk(wrap({ campaigns: [campaign({ commentNewestPosts: true })] }));
+    expect(notComment.backup.data.campaigns[0]).not.toHaveProperty('commentNewestPosts');
     const low = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', commentsPerGroup: 0 })] }));
     expect(low.backup.data.campaigns[0]?.commentsPerGroup).toBe(1);
   });

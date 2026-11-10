@@ -5,6 +5,8 @@ export const LIMITS = {
   maxDelaySec: 3600,
   maxGroupsPerCampaign: 100,
   maxCommentsPerGroup: 100,
+  /** Newest-posts mode cannot check a post's age, so it stays small. */
+  maxNewestPostComments: 5,
   maxVariations: 10,
   maxPostLength: 5000,
   /** Safety Break: pause after at most this many posts, for at most this many minutes. */

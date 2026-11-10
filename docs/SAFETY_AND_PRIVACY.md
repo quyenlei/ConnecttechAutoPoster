@@ -27,6 +27,7 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | Desktop notifications are opt-in (off by default, checkbox in **Tổng quan**). They are local, fire only when a run finishes, pauses by itself or is halted, and contain only the campaign name and counts. | `lib/notify.ts`, background |
 | Comment campaigns use the same delay range, Safety Break, failure pause and halt rules as post campaigns; max 100 comments per group | `lib/run-engine.ts`, `lib/limits.ts` |
 | Comments only go to posts CAP can identify (link and time) within the last 24 hours; if identity or age is unknown, nothing is sent | `lib/fb-dom.ts` `findRecentGroupPosts` |
+| Newest-posts mode is opt-in per campaign, limited to 5 posts per group, never scrolls, and only uses the first 8 feed items that have exactly one comment editor. The post age is **not** checked in this mode, so a pinned or old post at the top can be commented. Mock-tested only | `lib/fb-dom.ts` `findNewestFeedPosts`, `lib/limits.ts`, background `commentOnNewestPost` |
 | The post link and the run slot are saved before the comment editor opens, so a post is never commented twice and an uncertain submission is never retried automatically | background `commentInGroup` |
 | A comment counts as sent only when a new visible comment appears and the editor is cleared | content script |
 
@@ -35,7 +36,7 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 ## Privacy
 - No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries), settings (notification on/off). The Tổng quan page is computed from that log on this device.
-- Comment campaigns keep attempted post links locally without automatic expiry and run-slot identifiers for seven days to avoid automatic retries after an uncertain submission.
+- Comment campaigns keep attempted post links locally without automatic expiry run-slot identifiers for seven days, and, in newest-posts mode, a short hash of the author and the start of the post text (never the text itself, no automatic expiry) to avoid automatic retries after an uncertain submission.
 - **Backup file (tab Sao lưu):** created only when you press export, saved by the browser to your own device. It contains post texts, group names and the activity log, and is not encrypted. CAP never uploads it. It never contains Facebook cookies, tokens, run state or comment re-run protection data.
 - **Campaign images:** chosen from your own computer, shrunk on the device and stored in `chrome.storage.local` (limits: 4 images per campaign, 1 MB each, 4 MB in total). They are sent only to the Facebook composer when a post is made, and they are included in the backup file you export. They are never uploaded anywhere else, and their names, paths or data are never written to the activity log. No new permission or host was added. If the image input cannot be found, the post is not sent as text only.
 - **`{group}` and link preview option:** both are opt-in per campaign, visible in the form, and only change what is typed or which preview card is closed in the normal composer.

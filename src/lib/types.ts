@@ -40,6 +40,8 @@ export interface Campaign {
   /** Older campaigns without a mode remain post campaigns. */
   mode?: 'post' | 'comment';
   commentsPerGroup?: number;
+  /** Comment campaigns only, opt-in. Comment on the newest posts of the feed without knowing their age. */
+  commentNewestPosts?: boolean;
   /** One or more post texts; they rotate across groups. */
   variations: string[];
   groupIds: string[];

@@ -172,6 +172,10 @@ function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: n
   if (raw.mode === 'comment') {
     campaign.mode = 'comment';
     campaign.commentsPerGroup = clampInt(raw.commentsPerGroup, 1, LIMITS.maxCommentsPerGroup, 1);
+    if (raw.commentNewestPosts === true) {
+      campaign.commentNewestPosts = true;
+      campaign.commentsPerGroup = Math.min(campaign.commentsPerGroup, LIMITS.maxNewestPostComments);
+    }
   }
   const schedule = parseSchedule(raw.schedule);
   if (schedule) campaign.schedule = schedule;

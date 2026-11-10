@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+### Added
+- Comment campaigns: opt-in **newest-posts mode** for groups where Facebook shows no post link or readable time. It opens the group sorted by newest posts and comments on up to 5 of the first feed posts that have their own comment editor. The post age is not checked, so the 24-hour rule does not apply in this mode and a pinned or old post can be commented. Posts are remembered by a short hash of author and text start. Unit tests and the local mock pass; not verified on live Facebook.
+
+### Changed
+- Comment campaigns, newest-posts mode: the comment box is clicked and filled by paste or typed lines; feed forms have no send button, so the comment is sent with Enter (repeated only while text is still in the box); the send button search no longer mistakes the action-bar "Bình luận" button; a post whose comment was never sent (typing or send step failed before submit) is released instead of staying reserved; feed items still loading are scrolled into view (first 8 only) and waited for up to 12 s; the post fingerprint falls back to the first text block so posts by one author no longer share a fingerprint. Failure logs now list nearby buttons and per-item feed details. Unit tests pass; live Facebook: 2 of 3 groups sent in the owner's last run, Enter was ignored once.
+- Comment campaigns: when no post can be used, the log now says how many posts were seen on the page versus how many were identified within 24 hours. Unit tests and typecheck pass; not yet checked on live Facebook.
+
+### Known limitations
+- **Newest-posts mode, live result (2026-11-09, two groups): one comment sent, one group sent nothing because none of its first 8 feed items had a comment editor yet. Landing on the right post is not confirmed. Next steps are in `docs/ROADMAP.md`.**
+- **(Partly addressed in Unreleased: opt-in newest-posts mode, not yet confirmed live. The 24-hour mode itself is unchanged and still misses these posts.) Comment campaigns can miss most posts (observed on live Facebook, 2026-11-09, one test group, not yet fixed):** a group with 8 posts in the last 24 hours gave only 1 identifiable post. The owner measured the page in the browser console: the newer posts show only a text label such as "47 phút". That label is not inside a link, and the post has no link or long post ID anywhere in its DOM. Facebook seems to add the post link only when the pointer hovers the timestamp. Without an ID, CAP cannot open the post, so it skips it. Scrolling does not help. The log line "Tìm thấy N bài" counts only identified posts, not all posts. CAP will not fake hover events. The mobile group page (`m.facebook.com`) is not an option: the owner found it redirects to the desktop page. The owner also measured that newer feed items are plain `div` children of the feed with no `role="article"`, no link and no readable time, but they do have their own comment editor.
+
 ## [0.5.0] - 2026-11-09
 
 Verification status: the owner tested these v0.3 features by hand on live Facebook and confirmed they work (templates, image attachments, link preview option, multi-line posts). Automated tests still use unit tests and the local mock only.

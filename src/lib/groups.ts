@@ -23,6 +23,10 @@ export function recentActivityGroupUrl(slug: string): string {
   return `${canonicalGroupUrl(slug)}?sorting_setting=RECENT_ACTIVITY`;
 }
 
+export function newestPostsGroupUrl(slug: string): string {
+  return `${canonicalGroupUrl(slug)}?sorting_setting=CHRONOLOGICAL`;
+}
+
 export interface ParsedGroups {
   groups: Group[];
   rejected: string[];
