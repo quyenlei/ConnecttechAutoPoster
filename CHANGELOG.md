@@ -2,6 +2,16 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.7] - 2026-11-10
+
+### Fixed
+- "Uncaught Error: Extension context invalidated" from `content-scripts/chat.js`: after the extension was reloaded or updated, the chat box already on an open Facebook page was cut off from it and threw on every click. It now notices this (on a click, or by itself within 3 s) and turns into a note "Connecttech Auto Poster vừa được cập nhật. Tải lại trang để dùng tiếp." with **Tải lại trang** and **Ẩn**. A copy left by an older version is removed when the new one starts. Smoke-tested by reloading the extension with a Facebook page open.
+
+## [0.6.6] - 2026-11-10
+
+### Fixed
+- **"Lưu và chạy" did nothing in the chat box on Facebook.** Every confirmation (start, continue, delete, discard changes, read joined groups) used the browser's `window.confirm`; inside the extension pages framed in a Facebook page that dialog can be blocked, which silently answers "no", so the buttons looked dead. They now use a dialog drawn by the page itself (`ui/confirm.tsx`, native `<dialog>`). While another run is active, a note next to "Lưu và chạy" explains why the button is disabled. The smoke test now fails if a native browser dialog appears. Mock-tested; the original failure was not reproduced on live Facebook, so the blocked dialog is the likely cause, not a confirmed one.
+
 ## [0.6.5] - 2026-11-10
 
 ### Added

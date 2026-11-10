@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatDuration } from '@/lib/delay';
 import { isActive } from '@/lib/run-engine';
 import { campaignsItem, runItem } from '@/lib/storage';
+import { useConfirm } from './confirm';
 import { sendCommand, useItem, useNow } from './hooks';
 import { RUN_STATUS_LABEL } from './labels';
 
@@ -11,6 +12,7 @@ export function RunBar({ compact = false }: { compact?: boolean }) {
   const campaigns = useItem(campaignsItem);
   const now = useNow(run?.status === 'running');
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   if (!run) return null;
 
   const campaign = campaigns?.find((c) => c.id === run.campaignId);
@@ -19,7 +21,7 @@ export function RunBar({ compact = false }: { compact?: boolean }) {
   const unit = campaign?.mode === 'comment' ? 'lượt bình luận' : 'nhóm';
 
   async function continuePrevious() {
-    if (!window.confirm(`Chạy tiếp ${run?.queue.length ?? 0} ${unit} còn lại? Nhóm đã đăng ở lượt trước sẽ được bỏ qua. Lượt tiếp theo bắt đầu sau một khoảng chờ ngẫu nhiên.`)) return;
+    if (!(await confirm(`Chạy tiếp ${run?.queue.length ?? 0} ${unit} còn lại? Nhóm đã đăng ở lượt trước sẽ được bỏ qua. Lượt tiếp theo bắt đầu sau một khoảng chờ ngẫu nhiên.`, { okLabel: 'Chạy tiếp' }))) return;
     const reply = await sendCommand({ type: 'cap/run/continue' });
     setError(reply.ok ? null : (reply.error ?? 'Thao tác thất bại.'));
   }

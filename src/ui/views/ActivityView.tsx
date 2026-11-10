@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { logsToCsv } from '@/lib/csv';
 import { logsItem } from '@/lib/storage';
 import type { LogStatus } from '@/lib/types';
+import { useConfirm } from '../confirm';
 import { useItem } from '../hooks';
 import { LOG_STATUS_LABEL as STATUS_LABEL } from '../labels';
 
@@ -13,6 +14,7 @@ export function ActivityView() {
   const logs = useItem(logsItem) ?? [];
   const [filter, setFilter] = useState<LogStatus | 'all'>('all');
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const confirm = useConfirm();
   const rows = useMemo(
     () => logs.filter((l) => filter === 'all' || l.status === filter).slice().reverse(),
     [logs, filter],
@@ -20,8 +22,8 @@ export function ActivityView() {
 
   const shown = rows.slice(0, limit);
 
-  function clearLogs() {
-    if (window.confirm('Xóa toàn bộ nhật ký? Bạn nên xuất CSV trước. Thao tác này không thể hoàn tác.')) void logsItem.setValue([]);
+  async function clearLogs() {
+    if (await confirm('Xóa toàn bộ nhật ký? Bạn nên xuất CSV trước. Thao tác này không thể hoàn tác.', { okLabel: 'Xóa nhật ký', danger: true })) await logsItem.setValue([]);
   }
 
   function exportCsv() {

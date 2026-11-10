@@ -10,6 +10,8 @@ import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/
 import { hasUnknownPlaceholder } from '@/lib/template';
 import { campaignsItem, groupsItem, runItem } from '@/lib/storage';
 import type { Campaign } from '@/lib/types';
+import { useConfirm } from '../confirm';
+import { RUN_STATUS_LABEL } from '../labels';
 import { sendCommand, useItem } from '../hooks';
 import { prepareImage } from '../image-file';
 
@@ -47,6 +49,7 @@ export function CampaignsView() {
   const [draft, setDraft] = useState<Campaign | null>(null);
   const [groupQuery, setGroupQuery] = useState('');
   const [message, setMessage] = useState<{ text: string; danger: boolean } | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!draft && campaigns[0]) setDraft(campaigns[0]);
@@ -93,8 +96,8 @@ export function CampaignsView() {
   const otherImageBytes = draft ? campaigns.filter((c) => c.id !== draft.id).reduce((sum, c) => sum + totalImageBytes(c.images ?? []), 0) : 0;
   const variationCount = draft ? draft.variations.filter((v) => v.trim()).length : 0;
 
-  function select(next: Campaign) {
-    if (dirty && !window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?')) return;
+  async function select(next: Campaign) {
+    if (dirty && !(await confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?', { okLabel: 'Bỏ thay đổi', danger: true }))) return;
     setDraft(next);
     setGroupQuery('');
     setMessage(null);
@@ -153,7 +156,7 @@ export function CampaignsView() {
     }
     await campaignsItem.setValue(result.campaigns);
     const first = result.campaigns[result.campaigns.length - result.added];
-    if (first) select(first); // asks first when the open campaign has unsaved changes
+    if (first) await select(first); // asks first when the open campaign has unsaved changes
     setMessage({ text: `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm. Hãy viết nội dung rồi lưu trước khi chạy.`, danger: false });
   }
 
@@ -207,7 +210,7 @@ export function CampaignsView() {
 
   async function launch() {
     if (!draft) return;
-    if (!window.confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`)) return;
+    if (!(await confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`, { okLabel: 'Bắt đầu chạy' }))) return;
     const c = await save();
     if (!c) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: c.id });
@@ -215,7 +218,7 @@ export function CampaignsView() {
   }
 
   async function remove(id: string, name: string) {
-    if (!window.confirm(`Xóa chiến dịch “${name}”? Thao tác này không thể hoàn tác.`)) return;
+    if (!(await confirm(`Xóa chiến dịch “${name}”? Thao tác này không thể hoàn tác.`, { okLabel: 'Xóa', danger: true }))) return;
     await campaignsItem.setValue(campaigns.filter((c) => c.id !== id));
     setDraft(null);
   }
@@ -227,14 +230,14 @@ export function CampaignsView() {
           <h2>Chiến dịch</h2>
           <div className="runbar__actions">
             <button className="button button--small" type="button" onClick={() => void addDefaults()}>Tạo chiến dịch mặc định</button>
-            <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>
+            <button className="button button--small" type="button" onClick={() => void select(blank())}>Tạo mới</button>
           </div>
         </div>
         {campaigns.length === 0 && <p className="u-muted">Chưa có chiến dịch nào được lưu.</p>}
         <ul>
           {campaigns.map((c) => (
             <li key={c.id} className="campaigns__list-item">
-              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => select(c)}>
+              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => void select(c)}>
                 {c.name}
               </button>
               <button className="button button--small button--danger" type="button" onClick={() => remove(c.id, c.name)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
@@ -485,7 +488,8 @@ export function CampaignsView() {
             {message && <p className={message.danger ? 'notice notice--danger' : 'u-muted'} role="status">{message.text}</p>}
             <div className="runbar__actions">
               <button className="button" type="button" onClick={() => void save()}>{saved ? 'Lưu thay đổi' : 'Lưu chiến dịch'}</button>
-              <button className="button button--primary" type="button" onClick={launch} disabled={busy}>Lưu và chạy</button>
+              <button className="button button--primary" type="button" onClick={() => void launch()} disabled={busy}>Lưu và chạy</button>
+              {busy && run && <p className="u-muted">Đang có một lượt chạy ({RUN_STATUS_LABEL[run.status]}). Hãy dừng nó ở thanh trạng thái phía trên trước khi chạy chiến dịch khác.</p>}
             </div>
           </div>
         </section>

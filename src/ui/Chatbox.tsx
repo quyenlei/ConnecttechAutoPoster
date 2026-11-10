@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { isActive } from '@/lib/run-engine';
 import { campaignsItem, logsItem, runItem } from '@/lib/storage';
 import { RunBar } from './RunBar';
+import { useConfirm } from './confirm';
 import { sendCommand, useItem } from './hooks';
 import { LOG_STATUS_LABEL } from './labels';
 
@@ -21,6 +22,7 @@ export function Chatbox() {
   const [selected, setSelected] = useState('');
   const [error, setError] = useState<string | null>(null);
   const feedRef = useRef<HTMLOListElement>(null);
+  const confirm = useConfirm();
 
   const recent = useMemo(() => logs.slice(-FEED_SIZE), [logs]);
   const lastId = recent[recent.length - 1]?.id;
@@ -40,7 +42,7 @@ export function Chatbox() {
       ? `bình luận tối đa ${campaign.commentsPerGroup ?? 1} bài trong mỗi nhóm đã chọn`
       : `đăng vào ${campaign.groupIds.length} nhóm, bài đầu tiên đăng ngay`;
     const question = `Bắt đầu "${campaign.name}": ${what}? CAP chạy ngay trên tab này: tab sẽ tự chuyển qua từng nhóm và không đóng khi xong.`;
-    if (!window.confirm(question)) return;
+    if (!(await confirm(question, { okLabel: 'Bắt đầu chạy' }))) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: campaign.id });
     setError(reply.ok ? null : (reply.error ?? 'Không thể bắt đầu.'));
   }

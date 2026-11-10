@@ -159,9 +159,20 @@ with sync_playwright() as p:
         }, 500);
       }
     """)
+    # Test only: answer CAP's own confirmation dialog (ui/confirm.tsx) with "yes", in every extension frame,
+    # including the chat box framed in Facebook pages. Native browser dialogs must not appear at all.
+    ctx.add_init_script("""
+      if (location.protocol === 'chrome-extension:') {
+        new MutationObserver(() => {
+          const ok = document.querySelector('dialog.confirm[open] button[type=submit]');
+          if (ok) ok.click();
+        }).observe(document, { subtree: true, childList: true, attributes: true });
+      }
+    """)
+    native_dialogs = []
     pg = ctx.new_page(); errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
-    pg.on("dialog", lambda d: d.accept())  # UI asks to confirm launching a run
+    pg.on("dialog", lambda d: (native_dialogs.append(d.message), d.accept()))  # must stay empty: CAP uses its own dialog
     pg.goto(f"chrome-extension://{eid}/options.html#groups"); pg.wait_for_selector("text=Connecttech Auto Poster")
     pg.fill("#group-list", "https://www.facebook.com/groups/mock1 | Mock One\nhttps://www.facebook.com/groups/mock2 | Mock Two\nhttps://evil.example/groups/x")
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("text=Nhóm của bạn (2)")
@@ -496,7 +507,7 @@ with sync_playwright() as p:
     # The chat box on a Facebook page (not only group pages): a round button opens a small window with the run
     # status, recent activity and a start button; it expands to the full dashboard in place, minimises and closes.
     # The mock sends a frame-src CSP like Facebook does; the extension pages must still load in the window.
-    fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: d.accept()); fb.goto('https://www.facebook.com/')
+    fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: (native_dialogs.append(d.message), d.accept())); fb.goto('https://www.facebook.com/')
     fb.click('cap-chat-host .cap-chat__launcher')
     chat = fb.frame_locator('cap-chat-host iframe')
     chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
@@ -533,6 +544,21 @@ with sync_playwright() as p:
     fb.click("cap-chat-host button[aria-label='Đóng']")
     assert fb.locator('cap-chat-host .cap-chat__launcher').is_visible(), 'launcher must come back after closing'
     fb.close()
+    assert not native_dialogs, f"native browser dialogs were used: {native_dialogs}"
     assert not errors
+
+    # Last, because it closes every extension page: reloading the extension cuts off the chat box already on an
+    # open Facebook page ("Extension context invalidated"). It must turn into a reload note instead of throwing.
+    stale = ctx.new_page(); stale_errors = []
+    stale.on('pageerror', lambda e: stale_errors.append(str(e)))
+    stale.goto('https://www.facebook.com/'); stale.locator('cap-chat-host .cap-chat__launcher').wait_for()
+    try:
+        pg.evaluate('chrome.runtime.reload()')
+    except Exception:
+        pass  # the page closes as the extension reloads
+    stale.locator('cap-chat-host .cap-chat__stale').wait_for(timeout=15000)
+    assert 'Tải lại trang' in stale.locator('cap-chat-host .cap-chat__stale').inner_text()
+    assert not stale_errors, stale_errors
+    # Under test automation the reloaded unpacked extension does not come back, so the new version is not checked here.
     print("SMOKE OK")
     ctx.close()

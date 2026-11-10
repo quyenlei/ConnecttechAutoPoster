@@ -48,8 +48,10 @@ function iconButton(label: string, paths: string[]): HTMLButtonElement {
 export default defineContentScript({
   matches: ['*://*.facebook.com/*'],
   runAt: 'document_idle',
-  async main() {
-    if (window.top !== window || document.querySelector(HOST_TAG)) return;
+  async main(ctx) {
+    if (window.top !== window) return;
+    // A copy left on the page by an earlier version of the extension (reloaded or updated) is replaced.
+    document.querySelector(HOST_TAG)?.remove();
 
     const host = document.createElement(HOST_TAG);
     const root = host.attachShadow({ mode: 'open' });
@@ -90,6 +92,41 @@ export default defineContentScript({
 
     let state: ChatboxState = await chatboxItem.getValue();
 
+    /**
+     * After the extension is reloaded or updated, this copy of the script is cut off from it: storage and
+     * extension URLs throw "Extension context invalidated". The window is then replaced by a note asking to
+     * reload the page, which starts the new version. `ctx.isInvalid` also fires `onInvalidated`.
+     */
+    function showReloadNote() {
+      const note = document.createElement('section');
+      note.className = 'cap-chat__stale';
+      note.setAttribute('role', 'status');
+      const text = document.createElement('p');
+      text.className = 'cap-chat__stale-text';
+      text.textContent = 'Connecttech Auto Poster vừa được cập nhật. Tải lại trang để dùng tiếp.';
+      const reload = document.createElement('button');
+      reload.type = 'button';
+      reload.className = 'cap-chat__stale-button';
+      reload.textContent = 'Tải lại trang';
+      reload.addEventListener('click', () => location.reload());
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'cap-chat__stale-button';
+      dismiss.textContent = 'Ẩn';
+      dismiss.addEventListener('click', () => host.remove());
+      note.append(text, reload, dismiss);
+      launcher.remove();
+      box.remove();
+      root.append(note);
+    }
+    ctx.onInvalidated(showReloadNote);
+    // Notice it without waiting for a click: the check runs on each tick and stops once invalidated.
+    ctx.setInterval(() => undefined, 3000);
+    /** Runs a handler only while the extension is still reachable. */
+    const live = (handler: () => void) => () => {
+      if (!ctx.isInvalid) handler();
+    };
+
     function render() {
       launcher.hidden = state.open;
       box.hidden = !state.open;
@@ -112,20 +149,20 @@ export default defineContentScript({
     function update(patch: Partial<ChatboxState>) {
       state = { ...state, ...patch };
       render();
-      void chatboxItem.setValue(state);
+      chatboxItem.setValue(state).catch(() => undefined); // only fails once the extension was reloaded
     }
 
-    launcher.addEventListener('click', () => {
+    launcher.addEventListener('click', live(() => {
       update({ open: true, minimized: false });
       close.focus();
-    });
-    title.addEventListener('click', () => update({ minimized: false }));
-    minimize.addEventListener('click', () => update({ minimized: true }));
-    expand.addEventListener('click', () => update({ expanded: !state.expanded, minimized: false }));
-    close.addEventListener('click', () => {
+    }));
+    title.addEventListener('click', live(() => update({ minimized: false })));
+    minimize.addEventListener('click', live(() => update({ minimized: true })));
+    expand.addEventListener('click', live(() => update({ expanded: !state.expanded, minimized: false })));
+    close.addEventListener('click', live(() => {
       update({ open: false });
       launcher.focus();
-    });
+    }));
     // The same window state in every Facebook tab, like Messenger chats.
     chatboxItem.watch((next) => {
       state = next;
