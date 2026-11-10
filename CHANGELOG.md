@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-10
 
 ### Changed
 - **Comment campaigns find posts in a new way.** Mock-tested, plus one live check on 2026-11-10 that the owner asked for, on the owner's own test groups (2 members each) only: the scan logged in through the owner's browser session, read post times from Facebook's time labels ("9 phút trước", "4 ngày trước"), read the user's name from "Bình luận dưới tên …", scrolled through 6 posts, sent **one** real comment that landed on the chosen post, and a later scan skipped that post because it showed the user's comment. A full campaign run from the dashboard was then checked live on the owner's "Test 2" group: 7 of 7 comments sent in 197 s (30 s apart, one window, the feed loaded once), each on a different recent post, the post that already had the user's comment skipped, and no post commented twice (checked on the page afterwards). Not yet seen live: a hover that reveals a missing time (one post stayed without a time after the hover and was skipped), and a post that needs its "Bình luận" button clicked.
