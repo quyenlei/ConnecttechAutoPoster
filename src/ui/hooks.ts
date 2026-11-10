@@ -8,8 +8,14 @@ export function useItem<T>(item: WxtStorageItem<T, Record<string, unknown>>): T 
   const [value, setValue] = useState<T>();
   useEffect(() => {
     let alive = true;
-    void item.getValue().then((v) => alive && setValue(v));
-    const unwatch = item.watch((v) => setValue(v));
+    // A change can arrive before the first read resolves (e.g. a click right after the view opens);
+    // the first read then holds the older value and must not overwrite the newer one.
+    let changed = false;
+    void item.getValue().then((v) => alive && !changed && setValue(v));
+    const unwatch = item.watch((v) => {
+      changed = true;
+      setValue(v);
+    });
     return () => {
       alive = false;
       unwatch();
