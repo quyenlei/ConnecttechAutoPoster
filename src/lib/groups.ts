@@ -19,10 +19,6 @@ export function canonicalGroupUrl(slug: string): string {
   return `https://www.facebook.com/groups/${slug}/`;
 }
 
-export function recentActivityGroupUrl(slug: string): string {
-  return `${canonicalGroupUrl(slug)}?sorting_setting=RECENT_ACTIVITY`;
-}
-
 export function newestPostsGroupUrl(slug: string): string {
   return `${canonicalGroupUrl(slug)}?sorting_setting=CHRONOLOGICAL`;
 }
@@ -82,3 +78,4 @@ export function removeFromSelection(selected: string[], ids: string[]): string[]
   const drop = new Set(ids);
   return selected.filter((id) => !drop.has(id));
 }
+

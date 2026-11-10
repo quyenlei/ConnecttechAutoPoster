@@ -1,3 +1,4 @@
+import type { FeedMode } from './comment-pick';
 import type { PostOutcome } from './types';
 
 /** Background -> content script (group page). */
@@ -16,45 +17,48 @@ export interface PostRequest {
   removeLinkPreview?: boolean;
 }
 
-export interface DiscoverRequest {
-  type: 'cap/discover-posts';
-  groupId: string;
-}
-
-export interface DiscoverReply {
-  urls: string[];
-  diagnostic?: string;
-  problem?: { kind: 'fatal' | 'skipped' | 'failed'; reason: string };
-}
-
-/** Newest-posts mode: pick one of the first feed posts of the open group page, then comment on it. */
+/**
+ * Comment campaigns: scan the open group feed (scrolling it) and choose one post, then comment on it.
+ * The choice stays in the page; the background reserves `keys` before asking for the comment.
+ */
 export interface FeedPickRequest {
   type: 'cap/feed-pick';
-  /** Fingerprints (see `postFingerprint`) already tried. */
-  skip: string[];
+  groupId: string;
+  mode: FeedMode;
+  /** `commentedPosts` keys of this group (post links and `feed:` fingerprints) already tried. */
+  tried: string[];
+  /** The campaign's comment texts, to recognise a comment already sent with one of them. */
+  ownTexts: string[];
 }
 
 export interface FeedPickReply {
   fingerprint?: string;
+  /** Keys to reserve in `commentedPosts` for the chosen post. */
+  keys?: string[];
   diagnostic?: string;
+  /** Diagnostic only: per post looked at, its fingerprint, the decision and the time label. Never post text. */
+  trace?: string[];
   problem?: { kind: 'fatal' | 'skipped' | 'failed'; reason: string };
 }
 
 export interface FeedCommentRequest {
   type: 'cap/feed-comment';
+  /** Must match the post chosen by the last `cap/feed-pick`. */
+  fingerprint: string;
   text: string;
 }
 
-export const isFeedPickRequest = (m: unknown): m is FeedPickRequest =>
-  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-pick' && Array.isArray((m as { skip?: unknown }).skip) && (m as { skip: unknown[] }).skip.every((v) => typeof v === 'string');
+const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+export const isFeedPickRequest = (m: unknown): m is FeedPickRequest => {
+  if (typeof m !== 'object' || m === null) return false;
+  const r = m as Partial<Record<keyof FeedPickRequest, unknown>>;
+  return r.type === 'cap/feed-pick' && typeof r.groupId === 'string' && (r.mode === 'recent' || r.mode === 'newest') && isStringArray(r.tried) && isStringArray(r.ownTexts);
+};
 
 export const isFeedCommentRequest = (m: unknown): m is FeedCommentRequest =>
-  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-comment' && typeof (m as { text?: unknown }).text === 'string';
-
-export interface CommentRequest {
-  type: 'cap/comment';
-  text: string;
-}
+  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-comment' &&
+  typeof (m as { text?: unknown }).text === 'string' && typeof (m as { fingerprint?: unknown }).fingerprint === 'string';
 
 /** Background -> content script: read the group name from the loaded page. */
 export interface GroupNameRequest {

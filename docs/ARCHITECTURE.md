@@ -35,6 +35,7 @@ src/
 │  ├─ stats.ts                 today / last-7-days counts and success rate from the log
 │  ├─ notify.ts                text of the run-finished notification
 │  ├─ run-engine.ts            pure run state machine
+│  ├─ comment-pick.ts          pure choice of the feed post to comment on, scan summary
 │  ├─ fb-dom.ts                ALL Facebook selectors and text hints
 │  ├─ backup.ts                JSON backup: build, validate (`parseBackup`), merge (`planImport`)
 │  ├─ csv.ts                   CSV export with formula-injection guard
@@ -86,20 +87,19 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 
 `src/lib/backup.ts` is pure; `storage.ts` adds `readBackupData` and `writeImportedData`; `BackupView` holds only state and events.
 
-- **File:** `{ app, formatVersion: 1, exportedAt, appVersion, data: { groups, campaigns, settings, logs } }`. `local:run`, `local:commentedPosts` and `local:scheduleCheck` are never exported.
+- **File:** `{ app, formatVersion: 1, exportedAt, appVersion, data: { groups, campaigns, settings, logs } }`. `local:run`, `local:commentedPosts`, `local:commentTab` and `local:scheduleCheck` are never exported.
 - **`parseBackup(text)`** refuses files over 8 MB (`MAX_BACKUP_BYTES`, sized for the image limit), broken JSON, another `app` and a newer `formatVersion`. Otherwise it rebuilds every item from known fields only and passes values through `LIMITS`, `clampDelay`, `parseGroupSlug` and `validateTimes`. Invalid items are dropped and counted.
 - **`planImport(current, backup)`** merges without deleting. An existing id keeps the current item. Groups also match by canonical URL, and campaign `groupIds` follow the match. Imported schedules are set to `enabled: false`. Logs merge by id and keep the newest `LIMITS.maxLogEntries`. File settings apply only when the current settings are the defaults.
 - **Write:** the view merges again with fresh data on confirm. `writeImportedData` checks `isActive(run)` right before writing and refuses while a run is active. Nothing in this flow starts a run.
 
 ## Comment campaigns
 
-A campaign with `mode: 'comment'` goes through the same run engine; only the step differs (`commentInGroup` instead of `postToGroup`).
+A campaign with `mode: 'comment'` goes through the same run engine; only the step differs (`commentInGroup` instead of `postToGroup`). Mock-tested only; not verified on live Facebook.
 
-1. Open the group feed with `sorting_setting=RECENT_ACTIVITY` and ask the content script (`cap/discover-posts`) for posts it can identify: a post link plus a creation time within 24 hours (`fb-dom.findRecentGroupPosts`).
-2. Pick the first link not in `local:commentedPosts`. If none, the step is `skipped` and the rest of that group is skipped (`skipRemainingGroup`); a feed where no post can be identified is reported as such.
-3. Save the post link and a run-slot key in `commentedPosts` **before** opening the editor. Post links never expire; slot keys expire after 7 days. An uncertain submission is therefore never retried.
-   **Newest-posts mode (opt-in, `commentNewestPosts`):** on live Facebook (owner's console measurements, 2026-11-09, one group) newer feed posts show no link, no readable time and no `role="article"`; the feed items are plain `div` children of `[role="feed"]` and the time text is not exposed. So the 24-hour rule cannot be checked. This mode skips discovery, opens the group with `sorting_setting=CHRONOLOGICAL` and asks the content script (`cap/feed-pick`, `fb-dom.findNewestFeedPosts`) for one of the first `NEWEST_FEED_WINDOW` (8) feed items that holds exactly one comment editor and a comment button. It never scrolls. The post is remembered as `feed:<groupId>:<fingerprint>` in `commentedPosts` (fingerprint: short hash of the author from the comment button label and the start of the post text, see `postFingerprint`); like post links, these keys do not expire. The same reserve-before-typing rule applies, then `cap/feed-comment` types into the element chosen earlier and confirms inside that item only. Capped at `LIMITS.maxNewestPostComments` (5) per group. Verified on the local mock only; whether the sort parameter works and whether a comment lands on the right post is not confirmed on live Facebook.
-4. Open the post and send `cap/comment`. The content script counts a comment as sent only when a new visible comment appears and the editor is empty.
+1. **Tab** (`openGroupFeed`, `openVisibleTab`): an active tab in the window the user is in (no new window; Chrome hardly renders hidden tabs, so Facebook loads no more feed posts there). `local:commentTab` stores `{ tabId, windowId, returnTabId, groupId, runStartedAt }`. The next comment in the same group and run reuses the loaded feed (bringing the tab to the front again if the user switched away); another group navigates the same tab (`newestPostsGroupUrl`, `sorting_setting=CHRONOLOGICAL`); another run closes it and opens a new one. `closeCommentWindow` closes the tab and re-activates `returnTabId`; it runs when a run starts, after a step whose state is not `running`, and on pause/stop/reset when no step is in flight.
+2. **Scan** (`cap/feed-pick`, content script `pickFeedPost`): walks `fb-dom.findFeedItems` from the top. Each item is scrolled into view and waited for (`isFeedItemRendered`); when the loaded items run out, the page is scrolled to the end to load more. `fb-dom.readFeedPost` returns fingerprint, post link, age (`PostAge` min/max from `parseAgeLabel`, tooltips, `time`, `readStructuredPostTimes`), whether the post already shows the user's comment (`findMyName`, `hasMyComment`), and the editor or "Bình luận" button. When the age is unknown, `revealTime` hovers up to 4 `findTimestampTargets` once each and reads again. `comment-pick.judgeFeedPost` (pure) decides; the first accepted post is kept in page memory and its keys (`commentKeys`: link and `feed:<groupId>:<fingerprint>`) are returned. Limits: `LIMITS.feedScanMaxPosts`, `feedScanTimeoutMs`, `newestFeedWindow`; recent mode also stops at 3 old posts in a row (`feedIsExhausted`). Nothing found → `skipped` with `skipRemainingGroup` and `describeScan` as the reason.
+3. **Reserve**: the background saves the keys and the run slot in `commentedPosts` before asking for the comment. Post links and fingerprints never expire; slot keys expire after 7 days. A `retryable` failure (nothing typed) releases the keys.
+4. **Comment** (`cap/feed-comment`): checks the fingerprint matches the kept post, uses its editor or clicks its "Bình luận" button (inline editor or dialog, closed with Escape afterwards), types, sends (button or Enter), and counts it as sent only when the editor is empty and a new visible comment with the text appears.
 
 ## Post content: `{group}`, images, link preview
 

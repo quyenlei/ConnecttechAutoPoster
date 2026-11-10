@@ -246,28 +246,86 @@ export function readGroupName(doc: Document): string | null {
   return heading ? heading.normalize('NFC') : null;
 }
 
-/** Parse Facebook's Vietnamese absolute timestamp in the browser's local timezone. */
-function parseFacebookDate(value: string): number {
-  const match = value.normalize('NFC').replace(/\s+/g, ' ').match(/(?:^|,\s*)(\d{1,2})\s+tháng\s+(\d{1,2}),\s*(\d{4})\s+lúc\s+(\d{1,2}):(\d{2})(?:\s|$)/i);
-  if (!match) return NaN;
-  const [, d, m, y, h, min] = match;
-  const date = new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(min));
-  return date.getFullYear() === Number(y) && date.getMonth() === Number(m) - 1 && date.getDate() === Number(d) && date.getHours() === Number(h) && date.getMinutes() === Number(min) ? date.getTime() : NaN;
+const DAY_MS = 86_400_000;
+const FB_HOSTS = ['facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com'];
+const EN_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+function validDate(y: number, m: number, d: number, h: number, min: number): number {
+  const date = new Date(y, m - 1, d, h, min);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d && date.getHours() === h && date.getMinutes() === min ? date.getTime() : NaN;
 }
 
-/** Relative labels are rounded down by Facebook; exclude ambiguous day labels. */
-function parseRelativeDate(value: string, now: number): number {
-  const match = lower(value).replace(/\s+/g, ' ').match(/^(\d+)\s*(giây|phút|giờ|seconds?|minutes?|hours?|s|m|h)(?:\s+trước|\s+ago)?$/);
-  if (!match) return NaN;
-  const n = Number(match[1]);
-  const unit = match[2];
-  const ms = unit === 'giây' || unit === 's' || unit?.startsWith('second') ? 1000 : unit === 'phút' || unit === 'm' || unit?.startsWith('minute') ? 60_000 : 3_600_000;
-  // Account for rounding so only posts certainly within 24 hours qualify.
-  return (n + 1) * ms <= 86_400_000 ? now - n * ms : NaN;
+/**
+ * Facebook's absolute timestamp (tooltip of the post time), in the browser's local timezone.
+ * Vietnamese "5 Tháng 11, 2026 lúc 14:15" (year optional) or English "November 5, 2026 at 2:15 PM".
+ */
+export function parseFacebookDate(value: string, now = Date.now()): number {
+  const text = value.normalize('NFC').replace(/\s+/g, ' ');
+  const vi = text.match(/(?:^|[\s,])(\d{1,2})\s+tháng\s+(\d{1,2})(?:,\s*(\d{4}))?\s+lúc\s+(\d{1,2}):(\d{2})(?:\s|$)/i);
+  if (vi) {
+    const [, d, m, y, h, min] = vi;
+    return validDate(y ? Number(y) : new Date(now).getFullYear(), Number(m), Number(d), Number(h), Number(min));
+  }
+  const en = text.match(/([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  const month = en ? EN_MONTHS.indexOf((en[1] ?? '').toLowerCase()) : -1;
+  if (en && month >= 0) {
+    const [, , d, y, h, min, ampm] = en;
+    let hour = Number(h);
+    if (ampm) hour = (hour % 12) + (ampm.toUpperCase() === 'PM' ? 12 : 0);
+    return validDate(y ? Number(y) : new Date(now).getFullYear(), month + 1, Number(d), hour, Number(min));
+  }
+  return NaN;
+}
+
+/** How old a post is. Facebook rounds relative labels down, so the age lies between the two values. */
+export interface PostAge {
+  minAgeMs: number;
+  maxAgeMs: number;
+  /** The time label it was read from (short, never post text), for the log. */
+  label?: string;
+  /**
+   * Read from an absolute date. Facebook can render those in another time zone in the first page load
+   * (seen live: US Pacific, 15 hours off from Vietnam), so a relative label is preferred when both exist.
+   */
+  absolute?: boolean;
+}
+
+const AGE_UNITS: Array<[RegExp, number]> = [
+  [/^(giây|s|secs?|seconds?)$/, 1000],
+  [/^(phút|m|mins?|minutes?)$/, 60_000],
+  [/^(giờ|h|hrs?|hours?)$/, 3_600_000],
+  [/^(ngày|d|days?)$/, DAY_MS],
+  [/^(tuần|w|wks?|weeks?)$/, 7 * DAY_MS],
+  [/^(năm|y|yrs?|years?)$/, 365 * DAY_MS],
+];
+
+/** Reads a post time label: "47 phút", "3 giờ trước", "2 d", "Vừa xong", "Hôm qua lúc 10:00" or an absolute date. */
+export function parseAgeLabel(label: string, now: number): PostAge | null {
+  const text = lower(label).replace(/\s+/g, ' ').replace(/^(khoảng|about)\s+/, '');
+  if (!text || text.length > 60) return null;
+  if (/^(vừa xong|just now)$/.test(text)) return { minAgeMs: 0, maxAgeMs: 60_000 };
+  const relative = text.match(/^(\d{1,3})\s*([a-zà-ỹ]+)(?: trước| ago)?$/);
+  if (relative) {
+    const n = Number(relative[1]);
+    const unit = AGE_UNITS.find(([pattern]) => pattern.test(relative[2] ?? ''))?.[1];
+    return unit ? { minAgeMs: n * unit, maxAgeMs: (n + 1) * unit } : null;
+  }
+  const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+  const yesterday = text.match(/^(hôm qua|yesterday)(?: (?:lúc|at) (\d{1,2}):(\d{2})\s*(am|pm)?)?$/);
+  if (yesterday) {
+    if (!yesterday[2]) return { minAgeMs: now - startOfToday, maxAgeMs: now - startOfToday + DAY_MS };
+    let hour = Number(yesterday[2]);
+    if (yesterday[4]) hour = (hour % 12) + (yesterday[4] === 'pm' ? 12 : 0);
+    const d = new Date(startOfToday - DAY_MS);
+    d.setHours(hour, Number(yesterday[3]));
+    return { minAgeMs: now - d.getTime(), maxAgeMs: now - d.getTime() };
+  }
+  const at = parseFacebookDate(label, now);
+  return Number.isFinite(at) && at <= now ? { minAgeMs: now - at, maxAgeMs: now - at, absolute: true } : null;
 }
 
 function groupPostUrl(url: URL, groupId: string): string | null {
-  if (url.protocol !== 'https:' || !['facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com'].includes(url.hostname)) return null;
+  if (url.protocol !== 'https:' || !FB_HOSTS.includes(url.hostname)) return null;
   const match = url.pathname.match(/^\/groups\/([A-Za-z0-9._-]+)\/(?:posts|permalink)\/(\d+)\/?$/);
   if (match && match[1] === groupId) return `https://www.facebook.com/groups/${groupId}/posts/${match[2]}/`;
   const group = url.pathname.match(/^\/groups\/([A-Za-z0-9._-]+)\/?$/);
@@ -276,8 +334,11 @@ function groupPostUrl(url: URL, groupId: string): string | null {
     ? `https://www.facebook.com/groups/${groupId}/posts/${ids[0]}/` : null;
 }
 
-/** Read structured feed stories without evaluating scripts or using unrelated recommendations. */
-function findStructuredGroupPosts(doc: Document, groupId: string, now: number): Array<{ url: string; postedAt: number }> {
+/**
+ * Post times from the structured data Facebook embeds in the first page load (no script is run).
+ * Posts loaded later by scrolling are usually not in it, so this only helps for the first few.
+ */
+export function readStructuredPostTimes(doc: Document, groupId: string): Map<string, number> {
   const result = new Map<string, number>();
   for (const script of doc.querySelectorAll<HTMLScriptElement>('script[type="application/json"]')) {
     const text = script.textContent ?? '';
@@ -294,66 +355,266 @@ function findStructuredGroupPosts(doc: Document, groupId: string, now: number): 
         const group = node.to as Record<string, unknown>;
         let url: string | null = null;
         try { url = groupPostUrl(new URL(node.permalink_url), groupId); } catch { /* invalid permalink */ }
-        const postedAt = node.creation_time * 1000;
         const matchesGroup = group.__typename === 'Group' && (!/^\d+$/.test(groupId) || group.id === groupId);
-        if (matchesGroup && url && url.endsWith(`/posts/${node.post_id}/`) && postedAt <= now && postedAt >= now - 86_400_000) result.set(url, postedAt);
+        if (matchesGroup && url && url.endsWith(`/posts/${node.post_id}/`)) result.set(url, node.creation_time * 1000);
       }
       pending.push(...Object.values(node));
     }
   }
-  return [...result].map(([url, postedAt]) => ({ url, postedAt }));
+  return result;
 }
 
-/** Accept absolute dates on article timestamps or the post link's described tooltip. */
-export function findRecentGroupPosts(doc: Document, groupId: string, now: number): Array<{ url: string; postedAt: number }> {
-  const result = new Map(findStructuredGroupPosts(doc, groupId, now).map((post) => [post.url, post.postedAt]));
-  for (const link of doc.querySelectorAll<HTMLAnchorElement>('a[href]')) {
-    let url: URL;
-    try { url = new URL(link.href, 'https://www.facebook.com'); } catch { continue; }
-    let postUrl = groupPostUrl(url, groupId);
-    const ids = (link.getAttribute('aria-describedby') ?? '').trim().split(/\s+/);
-    const dates = ids.map((id) => parseFacebookDate(doc.getElementById(id)?.textContent ?? '')).filter(Number.isFinite);
-    if (dates.length > 1) continue;
-    const labelIds = (link.getAttribute('aria-labelledby') ?? '').trim().split(/\s+/);
-    const labels = [link.textContent ?? '', ...labelIds.map((id) => doc.getElementById(id)?.textContent ?? '')];
-    const relative = labels.map((label) => parseRelativeDate(label, now)).filter(Number.isFinite);
-    const postedAt = dates[0] ?? relative[0] ?? NaN;
-    if (!postUrl && Number.isFinite(postedAt) && url.protocol === 'https:' && ['facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com'].includes(url.hostname) && url.pathname.replace(/\/$/, '') === `/groups/${groupId}` && url.hash.startsWith('#?')) {
-      // Some feeds defer the timestamp URL. A comment link in the same post can expose its ID.
-      for (let parent = link.parentElement; parent && parent !== doc.body; parent = parent.parentElement) {
-        const timestampLinks = [...parent.querySelectorAll<HTMLAnchorElement>('a[aria-describedby]')].filter((a) =>
-          (a.getAttribute('aria-describedby') ?? '').split(/\s+/).some((id) => Number.isFinite(parseFacebookDate(doc.getElementById(id)?.textContent ?? ''))));
-        if (timestampLinks.length > 1) break;
-        const urls = new Set([...parent.querySelectorAll<HTMLAnchorElement>('a[href]')].map((a) => {
-          try { return groupPostUrl(new URL(a.href), groupId); } catch { return null; }
-        }).filter((v): v is string => v !== null));
-        if (urls.size > 1) break;
-        if (timestampLinks.length === 1 && urls.size === 1) { postUrl = [...urls][0]!; break; }
-      }
-    }
-    if (!postUrl) continue;
-    if (!result.has(postUrl) && postedAt <= now && postedAt >= now - 24 * 60 * 60 * 1000) result.set(postUrl, postedAt);
-  }
-  for (const article of doc.querySelectorAll('[role="article"], article')) {
-    const time = article.querySelector('time[datetime]')?.getAttribute('datetime');
-    const postedAt = time ? Date.parse(time) : NaN;
-    if (!Number.isFinite(postedAt) || postedAt > now || postedAt < now - 24 * 60 * 60 * 1000) continue;
-    for (const link of article.querySelectorAll<HTMLAnchorElement>('a[href]')) {
-      let url: URL;
-      try { url = new URL(link.href, 'https://www.facebook.com'); } catch { continue; }
-      const postUrl = groupPostUrl(url, groupId);
-      if (!postUrl) continue;
-      if (!result.has(postUrl)) result.set(postUrl, postedAt);
-      break;
-    }
-  }
-  return [...result].map(([url, postedAt]) => ({ url, postedAt }));
+/** Feed items: the direct children of the group feed, in page order (newest first when sorted by new posts). */
+export function findFeedItems(doc: Document): HTMLElement[] {
+  const feed = doc.querySelector('[role="feed"]');
+  return feed ? [...feed.children].filter((el): el is HTMLElement => el instanceof HTMLElement) : [];
 }
 
-/** Diagnostic only: a visible editor does not establish a post identity or age. */
-export function countCommentEditors(doc: Document): number {
-  return [...doc.querySelectorAll<HTMLElement>('[role="textbox"][contenteditable="true"]')]
-    .filter((el) => /comment|bình luận/i.test(lower(el.getAttribute('aria-label')))).length;
+/** Items far from the viewport are empty placeholders until Facebook renders them. */
+export function isFeedItemRendered(item: HTMLElement): boolean {
+  return item.querySelector('[dir="auto"], [contenteditable="true"], [role="button"], a[href]') !== null;
+}
+
+const COMMENT_LABEL = /^(bình luận|phản hồi|comment|reply)/i;
+
+/**
+ * Comments are articles inside the post: either labelled "Bình luận dưới tên …" or nested in the post's own
+ * article. The post itself may be the item or an unlabelled article directly inside it.
+ */
+function isCommentNode(node: Element, item: Element): boolean {
+  if (node === item || node.getAttribute('role') !== 'article') return false;
+  if (COMMENT_LABEL.test((node.getAttribute('aria-label') ?? '').normalize('NFC').trim())) return true;
+  const outer = node.parentElement?.closest('[role="article"]') ?? null;
+  return outer !== null && (outer === item || item.contains(outer));
+}
+
+/** True when `el` belongs to a comment of the post rather than to the post itself. */
+function inComment(el: Element, item: Element): boolean {
+  for (let node: Element | null = el; node && node !== item; node = node.parentElement) {
+    if (isCommentNode(node, item)) return true;
+  }
+  return false;
+}
+
+/** Elements of the post itself: outside its comments and outside comment editors. */
+function own<T extends HTMLElement>(item: HTMLElement, selector: string): T[] {
+  return [...item.querySelectorAll<T>(selector)].filter((el) => !inComment(el, item) && !el.closest('[contenteditable="true"]'));
+}
+
+const before = (a: Node, b: Node | null): boolean => !b || (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+/** The one comment editor of the post (reply editors inside comments do not count). */
+export function findItemEditor(item: HTMLElement): HTMLElement | null {
+  const editors = [...item.querySelectorAll<HTMLElement>('[contenteditable="true"]')].filter((el) => !inComment(el, item));
+  return editors.length === 1 ? editors[0]! : null;
+}
+
+const COMMENT_ACTION = /^(bình luận|comment|viết bình luận|leave a comment|bình luận về bài viết của .+|comment on .+)$/i;
+
+/** The action-bar "Bình luận" button that opens the comment editor of a post that shows none yet. */
+export function findItemCommentAction(item: HTMLElement): HTMLElement | null {
+  return own<HTMLElement>(item, '[role="button"], button')
+    .find((el) => !el.closest('form') && COMMENT_ACTION.test((el.getAttribute('aria-label') || el.textContent || '').trim().normalize('NFC'))) ?? null;
+}
+
+const MY_NAME = /(?:bình luận dưới tên|trả lời dưới tên|comment as|reply as|answer as)\s+(.+?)\s*$/i;
+
+/** The logged-in user's name, read from a comment editor's label ("Bình luận dưới tên …"). Null when no editor shows it. */
+export function findMyName(doc: Document): string | null {
+  for (const box of doc.querySelectorAll<HTMLElement>('[contenteditable="true"]')) {
+    const labels = [box.getAttribute('aria-label'), box.getAttribute('aria-placeholder'), box.textContent ? null : box.parentElement?.textContent];
+    for (const label of labels) {
+      const name = MY_NAME.exec((label ?? '').normalize('NFC').trim())?.[1];
+      if (name) return name;
+    }
+  }
+  return null;
+}
+
+const COMMENT_BY = /^(?:bình luận dưới tên|bình luận của|phản hồi dưới tên|phản hồi của|comment by|reply by)\s+(.+)$/i;
+const squash = (s: string) => lower(s).replace(/\s+/g, ' ');
+
+/**
+ * True when the post already shows a comment by the logged-in user, or a comment with one of `ownTexts`.
+ * Only rendered comments can be seen; local history covers the rest.
+ */
+export function hasMyComment(item: HTMLElement, myName: string | null, ownTexts: readonly string[]): boolean {
+  const name = myName ? squash(myName) : '';
+  const comments = [...item.querySelectorAll<HTMLElement>('[role="article"]')].filter((el) => isCommentNode(el, item));
+  if (name) {
+    for (const comment of comments) {
+      const by = COMMENT_BY.exec((comment.getAttribute('aria-label') ?? '').normalize('NFC').trim())?.[1];
+      if (by && squash(by).startsWith(name)) return true;
+      if ([...comment.querySelectorAll('a')].some((a) => squash(a.textContent ?? '') === name)) return true;
+    }
+  }
+  const texts = ownTexts.map(squash).filter(Boolean);
+  if (texts.length === 0) return false;
+  return [...item.querySelectorAll<HTMLElement>('[dir="auto"]')].some((el) => !el.closest('[contenteditable="true"]') && texts.includes(squash(el.textContent ?? '')));
+}
+
+function readPostUrl(item: HTMLElement, groupId: string): string | null {
+  const urls = new Set<string>();
+  for (const link of own<HTMLAnchorElement>(item, 'a[href]')) {
+    try {
+      const url = groupPostUrl(new URL(link.href, 'https://www.facebook.com'), groupId);
+      if (url) urls.add(url);
+    } catch { /* not a URL */ }
+  }
+  return urls.size === 1 ? [...urls][0]! : null;
+}
+
+/** Time of the post: structured data, a `time` element, a tooltip date, or the short label in the post header. */
+export function readPostAge(item: HTMLElement, now: number, structured?: ReadonlyMap<string, number>, url?: string | null): PostAge | null {
+  const labelled = (age: PostAge | null, label: string): PostAge | null => (age ? { ...age, label: label.trim().slice(0, 60) } : null);
+  const known = url ? structured?.get(url) : undefined;
+  if (known !== undefined && known <= now) return { minAgeMs: now - known, maxAgeMs: now - known, label: 'dữ liệu bài' };
+  const stop = findItemEditor(item) ?? findItemCommentAction(item);
+  const header = (el: Element) => before(el, stop);
+  for (const time of own<HTMLElement>(item, 'time[datetime]').filter(header)) {
+    const at = Date.parse(time.getAttribute('datetime') ?? '');
+    if (Number.isFinite(at) && at <= now) return { minAgeMs: now - at, maxAgeMs: now - at, label: time.getAttribute('datetime') ?? '' };
+  }
+  // Every time label of the header, in page order: tooltip/label references first, then visible text.
+  const doc = item.ownerDocument;
+  const labels: string[] = [];
+  for (const el of own<HTMLElement>(item, '[aria-describedby], [aria-labelledby]').filter(header)) {
+    const ids = `${el.getAttribute('aria-labelledby') ?? ''} ${el.getAttribute('aria-describedby') ?? ''}`.trim().split(/\s+/);
+    for (const id of ids) if (id) labels.push(doc.getElementById(id)?.textContent ?? '');
+  }
+  for (const el of own<HTMLElement>(item, 'a, span, abbr, [role="link"]').filter(header)) {
+    if (el.children.length > 0 && el.tagName !== 'A') continue;
+    labels.push(el.getAttribute('aria-label') ?? '', el.textContent ?? '');
+  }
+  const ages = labels.map((text) => labelled(parseAgeLabel(text, now), text)).filter((age): age is PostAge => age !== null);
+  return ages.find((age) => !age.absolute) ?? ages[0] ?? null;
+}
+
+const AUTHOR_IN_LABEL = /(?:bình luận về bài viết của|comment on)\s+(.+?)(?:'s post)?(?:,\s*\d+\s+.+)?$/i;
+const SEE_MORE = /\s*(?:…|\.\.\.)?\s*(?:xem thêm|see more)\s*$/i;
+
+function readAuthor(item: HTMLElement): string {
+  for (const el of own<HTMLElement>(item, '[role="button"], button')) {
+    const author = AUTHOR_IN_LABEL.exec((el.getAttribute('aria-label') ?? '').trim())?.[1];
+    if (author) return author;
+  }
+  for (const el of own<HTMLElement>(item, '[data-ad-rendering-role="profile_name"], h2, h3, h4, strong')) {
+    const text = (el.textContent ?? '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+/** Post body marker Facebook puts around the message (seen live 2026-11-10). */
+const STORY_MESSAGE = '[data-ad-rendering-role="story_message"], [data-ad-comet-preview="message"], [data-ad-preview="message"]';
+/**
+ * Facebook pads every post with hidden filler text (a blockquote of repeated "Facebook", scrambled single letters).
+ * It is the same for every post, so it must never become the post body.
+ */
+const isFiller = (text: string): boolean => /^(?:facebook\s*)+$/i.test(text) || /^(?:\S[\s\u034f\u200b-\u200d]*){1,2}$/.test(text);
+
+/** The text of the post, which does not change when comments load or "Xem thêm" is pressed. */
+function readBody(item: HTMLElement, author: string, now: number): string {
+  const clean = (text: string) => text.trim().replace(SEE_MORE, '').replace(/\s+/g, ' ').slice(0, 160);
+  const message = own<HTMLElement>(item, STORY_MESSAGE)[0];
+  if (message) {
+    const text = clean(message.textContent ?? '');
+    if (text) return text;
+  }
+  for (const el of own<HTMLElement>(item, '[dir="auto"]')) {
+    if (el.closest('h2, h3, h4, strong, form, a, blockquote, [aria-hidden="true"], [role="button"], [role="link"]')) continue;
+    const text = clean(el.textContent ?? '');
+    if (text.length < 2 || text === author || isFiller(text) || parseAgeLabel(text, now)) continue;
+    return text;
+  }
+  return '';
+}
+
+/** Short non-reversible tag used to remember a feed post that has no ID. Only the tag is stored, never the text. */
+export function postFingerprint(author: string, body: string): string {
+  const input = `${author.trim().replace(/\s+/g, ' ').slice(0, 80)}|${body.trim().replace(/\s+/g, ' ').slice(0, 160)}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+export interface FeedPost {
+  element: HTMLElement;
+  /** Null when neither author nor text could be read. */
+  fingerprint: string | null;
+  url: string | null;
+  age: PostAge | null;
+  /** Already shows a comment by the logged-in user or with a campaign text. */
+  mine: boolean;
+  editor: HTMLElement | null;
+  commentAction: HTMLElement | null;
+}
+
+export interface FeedReadContext {
+  groupId: string;
+  now: number;
+  myName: string | null;
+  ownTexts: readonly string[];
+  structured?: ReadonlyMap<string, number>;
+}
+
+/** Everything the extension needs to know about one rendered feed item. Read-only. */
+export function readFeedPost(item: HTMLElement, ctx: FeedReadContext): FeedPost {
+  const author = readAuthor(item);
+  const body = readBody(item, author, ctx.now);
+  const url = readPostUrl(item, ctx.groupId);
+  return {
+    element: item,
+    fingerprint: author || body ? postFingerprint(author, body) : null,
+    url,
+    age: readPostAge(item, ctx.now, ctx.structured, url),
+    mine: hasMyComment(item, ctx.myName, ctx.ownTexts),
+    editor: findItemEditor(item),
+    commentAction: findItemCommentAction(item),
+  };
+}
+
+const PROFILE_PATH = /\/user\/|profile\.php|^\/[A-Za-z0-9.]+\/?$/;
+
+/**
+ * Elements in the post header that may be the post time. Facebook fills in the time and the post link
+ * only when the pointer is over them, so these get a hover (see `hoverOver`) when nothing else gives the time.
+ * Profile links are left out so no profile card is opened.
+ */
+export function findTimestampTargets(item: HTMLElement, max = 4): HTMLElement[] {
+  const stop = findItemEditor(item) ?? findItemCommentAction(item);
+  return own<HTMLElement>(item, 'a, [role="link"], [aria-describedby]')
+    .filter((el) => before(el, stop))
+    .filter((el) => {
+      const href = el.getAttribute('href');
+      if (!href || href.startsWith('#')) return true;
+      try {
+        const path = new URL(href, 'https://www.facebook.com').pathname;
+        return !PROFILE_PATH.test(path);
+      } catch { return false; }
+    })
+    .slice(0, max);
+}
+
+/** The events a browser sends when the pointer moves onto an element. One element, no movement path. */
+export function hoverOver(el: HTMLElement): void {
+  const init = { bubbles: true, cancelable: true, composed: true, view: el.ownerDocument.defaultView };
+  el.dispatchEvent(new PointerEvent('pointerover', init));
+  el.dispatchEvent(new PointerEvent('pointerenter', { ...init, bubbles: false }));
+  el.dispatchEvent(new MouseEvent('mouseover', init));
+  el.dispatchEvent(new MouseEvent('mouseenter', { ...init, bubbles: false }));
+}
+
+/** The matching events when the pointer leaves the element again. */
+export function hoverOut(el: HTMLElement): void {
+  const init = { bubbles: true, cancelable: true, composed: true, view: el.ownerDocument.defaultView };
+  el.dispatchEvent(new PointerEvent('pointerout', init));
+  el.dispatchEvent(new PointerEvent('pointerleave', { ...init, bubbles: false }));
+  el.dispatchEvent(new MouseEvent('mouseout', init));
+  el.dispatchEvent(new MouseEvent('mouseleave', { ...init, bubbles: false }));
 }
 
 /** Count rendered comment-like text outside editors to detect a new visible occurrence. */
@@ -363,13 +624,6 @@ export function countVisibleCommentText(doc: ParentNode, text: string): number {
   return [...doc.querySelectorAll<HTMLElement>('[dir="auto"]')].filter((el) =>
     el.children.length === 0 && !el.closest('[contenteditable="true"]') && el.getClientRects().length > 0 && (el.textContent ?? '').trim() === expected,
   ).length;
-}
-
-/** Only use an unambiguous editor on the opened post page. */
-export function findCommentTextbox(doc: Document): HTMLElement | null {
-  const boxes = [...doc.querySelectorAll<HTMLElement>('[role="textbox"][contenteditable="true"]')]
-    .filter((el) => /comment|bình luận/i.test(el.getAttribute('aria-label') ?? ''));
-  return boxes.length === 1 ? boxes[0]! : null;
 }
 
 const SEND_LABEL = /^(post comment|send comment|send|bình luận|đăng bình luận|gửi bình luận|gửi)$/i;
@@ -401,82 +655,23 @@ export function describeCommentButtons(textbox: HTMLElement): string {
   return `${textbox.closest('form') ? 'có form' : 'không form'}; nút: ${labels.slice(0, 12).join(' | ') || 'không có'}`;
 }
 
-/** Short non-reversible tag used to remember a feed post that has no ID. Only the tag is stored, never the text. */
-export function postFingerprint(author: string, body: string): string {
-  const input = `${author.trim().replace(/\s+/g, ' ').slice(0, 80)}|${body.trim().replace(/\s+/g, ' ').slice(0, 160)}`;
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(36);
-}
-
-export interface NewestPost {
-  element: HTMLElement;
-  fingerprint: string;
-  /** The one comment editor inside this feed item. */
-  textbox: HTMLElement;
-}
-
-/** How many of the first feed items are looked at when the newest posts are wanted. */
-export const NEWEST_FEED_WINDOW = 8;
-
-const AUTHOR_IN_LABEL = /(?:bình luận về bài viết của|comment on)\s+(.+?)(?:'s post)?(?:,\s*\d+\s+.+)?$/i;
-
-/**
- * Newest-posts mode. The group feed is sorted by newest posts; Facebook shows no post time or link there,
- * so the age is NOT known. Items are the direct children of `[role="feed"]` that hold exactly one
- * comment editor and a comment button. Only the first few items are considered, in page order.
- * Markup taken from the owner's console measurements on live Facebook (2026-11-09); not yet confirmed by a live comment.
- */
-export function findNewestFeedPosts(doc: Document, limit = NEWEST_FEED_WINDOW): NewestPost[] {
-  const feed = doc.querySelector('[role="feed"]');
-  if (!feed) return [];
-  const posts: NewestPost[] = [];
-  for (const item of [...feed.children].slice(0, limit)) {
-    if (!(item instanceof HTMLElement)) continue;
-    const editors = item.querySelectorAll<HTMLElement>('[contenteditable="true"]');
-    if (editors.length !== 1) continue;
-    const labels = [...item.querySelectorAll<HTMLElement>('[role="button"], button')].map((b) => b.getAttribute('aria-label') ?? '').filter((t) => /bình luận|comment/i.test(t));
-    if (labels.length === 0) continue;
-    const author = labels.map((t) => AUTHOR_IN_LABEL.exec(t.trim())?.[1] ?? '').find((a) => a) ?? '';
-    let body = '';
-    for (const el of item.querySelectorAll<HTMLElement>('[dir="auto"]')) {
-      if (el.children.length > 0 || el.closest('[contenteditable="true"]')) continue;
-      const t = (el.textContent ?? '').trim();
-      if (t.length > body.length) body = t;
-    }
-    if (!body) {
-      // Text wrapped in nested elements has no leaf: take the first text block in page order (the post body comes
-      // right after the header and does not change when comments are added). Without it every post by one author
-      // would share one fingerprint and only the first could ever be commented.
-      for (const el of item.querySelectorAll<HTMLElement>('[dir="auto"]')) {
-        if (el.closest('[contenteditable="true"]')) continue;
-        const t = (el.textContent ?? '').trim();
-        if (t && t !== author) { body = t.slice(0, 160); break; }
-      }
-    }
-    if (!author && !body) continue;
-    posts.push({ element: item, fingerprint: postFingerprint(author, body), textbox: editors[0]! });
-  }
-  return posts;
-}
-
-/** Diagnostic only: why each of the first feed items was or was not accepted by `findNewestFeedPosts`. */
-export function describeFeedItems(doc: Document, limit = NEWEST_FEED_WINDOW): string {
-  const feed = doc.querySelector('[role="feed"]');
-  if (!feed) return 'không có [role=feed]';
-  return [...feed.children].slice(0, limit).map((item, index) => {
-    const editors = item.querySelectorAll('[contenteditable="true"]').length;
-    const labels = [...item.querySelectorAll<HTMLElement>('[role="button"], button')].filter((b) => /bình luận|comment/i.test(b.getAttribute('aria-label') ?? '')).length;
-    const hasText = [...item.querySelectorAll<HTMLElement>('[dir="auto"]')].some((el) => (el.textContent ?? '').trim());
-    return `#${index + 1}: ô=${editors}, nút bình luận=${labels}, chữ=${hasText ? 'có' : 'không'}`;
-  }).join('; ');
+/** The comment editor of the newest open dialog (Facebook may open the post in a dialog instead of inline). */
+export function findDialogCommentEditor(doc: Document): HTMLElement | null {
+  const dialogs = [...doc.querySelectorAll<HTMLElement>('[role="dialog"]')];
+  const dialog = dialogs[dialogs.length - 1];
+  if (!dialog) return null;
+  const editors = [...dialog.querySelectorAll<HTMLElement>('[contenteditable="true"]')].filter((el) => /comment|bình luận/i.test(el.getAttribute('aria-label') ?? ''));
+  return editors.length === 1 ? editors[0]! : null;
 }
 
 /** Presses Enter in an editor the way a keyboard does (keydown, keypress, keyup). Feed comment forms submit on it. */
 export function pressEnter(target: HTMLElement): void {
   const init: KeyboardEventInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
   for (const type of ['keydown', 'keypress', 'keyup']) target.dispatchEvent(new KeyboardEvent(type, init));
+}
+
+/** Presses Escape, used to close a post dialog that Facebook opened for commenting. */
+export function pressEscape(target: HTMLElement): void {
+  const init: KeyboardEventInit = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
+  for (const type of ['keydown', 'keyup']) target.dispatchEvent(new KeyboardEvent(type, init));
 }

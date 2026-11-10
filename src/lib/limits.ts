@@ -7,6 +7,16 @@ export const LIMITS = {
   maxCommentsPerGroup: 100,
   /** Newest-posts mode cannot check a post's age, so it stays small. */
   maxNewestPostComments: 5,
+  /** Newest-posts mode only looks at this many posts from the top of the feed. */
+  newestFeedWindow: 10,
+  /** Comment campaigns: at most this many feed posts are looked at per scan (the feed is scrolled to load them). */
+  feedScanMaxPosts: 40,
+  /** Comment campaigns: one scan of a group feed stops after this long. */
+  feedScanTimeoutMs: 60_000,
+  /** Wait for a placeholder feed item to render, or for more items to load after scrolling. */
+  feedRenderWaitMs: 2_500,
+  /** After hovering the post time, wait this long for Facebook to show the time or link. */
+  hoverWaitMs: 1_500,
   maxVariations: 10,
   maxPostLength: 5000,
   /** Safety Break: pause after at most this many posts, for at most this many minutes. */

@@ -235,13 +235,14 @@ export function CampaignsView() {
                 <label className="field__label" htmlFor="c-comment-limit">Số bài tối đa mỗi nhóm</label>
                 <input id="c-comment-limit" className="field__control" type="number" min={1} max={draft.commentNewestPosts ? LIMITS.maxNewestPostComments : LIMITS.maxCommentsPerGroup} value={draft.commentsPerGroup ?? 5} onChange={(e) => patch({ commentsPerGroup: num(e.target.value) })} />
                 <span className="field__hint">{draft.commentNewestPosts
-                  ? 'Chế độ bài mới nhất: bình luận các bài đầu tiên của nhóm, không kiểm tra được giờ đăng.'
-                  : 'Chỉ xét bài có thời gian đăng xác định được trong 24 giờ qua. Bài đã xử lý sẽ không tự thử lại.'}</span>
+                  ? `Chế độ bài mới nhất: chỉ xét ${LIMITS.newestFeedWindow} bài đầu feed; bài không đọc được giờ đăng vẫn được bình luận.`
+                  : `Chỉ bình luận bài có giờ đăng đọc được trong 24 giờ qua; xem tối đa ${LIMITS.feedScanMaxPosts} bài mỗi lần quét.`} Bài bạn đã bình luận (thấy trên trang) hoặc đã thử trước đó sẽ được bỏ qua.</span>
+                <span className="field__hint">Khi chạy, CAP mở nhóm thành một tab trong cửa sổ Chrome bạn đang dùng, cuộn feed của nhóm (sắp xếp theo bài mới) và, khi cần, rê chuột vào giờ đăng của từng bài để đọc thời gian. Tab đó cần là tab đang hiển thị để Facebook tải bài (CAP tự đưa nó lên lại nếu bạn chuyển tab); nó tự đóng và quay về tab cũ khi chạy xong, tạm dừng hoặc dừng.</span>
                 <label className="campaigns__group">
                   <input type="checkbox" checked={draft.commentNewestPosts === true} onChange={(e) => patch({ commentNewestPosts: e.target.checked, ...(e.target.checked ? { commentsPerGroup: Math.min(draft.commentsPerGroup ?? 5, LIMITS.maxNewestPostComments) } : {}) })} />
                   Bình luận các bài mới nhất, không cần biết giờ đăng
                 </label>
-                <span className="field__hint">Dùng khi Facebook không cho biết giờ đăng. Tối đa {LIMITS.maxNewestPostComments} bài mỗi nhóm. Bài đầu nhóm có thể là bài ghim hoặc bài cũ, nên hãy tự kiểm tra trước. Bài đã bình luận sẽ không bình luận lặp.</span>
+                <span className="field__hint">Dùng khi Facebook không cho biết giờ đăng. Tối đa {LIMITS.maxNewestPostComments} bài mỗi nhóm. Bài cũ hơn 24 giờ vẫn bị bỏ qua khi đọc được giờ đăng, nhưng bài ghim không rõ giờ có thể bị bình luận, nên hãy tự kiểm tra trước.</span>
               </div>
             )}
 

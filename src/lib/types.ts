@@ -89,6 +89,17 @@ export interface RunState {
   retrying?: boolean;
 }
 
+/** The visible tab a running comment campaign uses. Kept so the next comment in the same group reuses the loaded feed. */
+export interface CommentTab {
+  tabId: number;
+  windowId: number;
+  /** The tab the user was on when CAP opened this one; shown again when it closes. */
+  returnTabId?: number;
+  groupId: string;
+  /** `RunState.startedAt` of the run that opened it; another run never reuses it. */
+  runStartedAt: number;
+}
+
 /** Local preferences. Everything is off until the user turns it on. */
 export interface Settings {
   /** Show a desktop notification when a run finishes, pauses or is halted. */
