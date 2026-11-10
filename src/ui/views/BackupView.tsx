@@ -77,7 +77,8 @@ export function BackupView() {
     cancel();
   }
 
-  const droppedTotal = pending ? pending.dropped.groups + pending.dropped.campaigns + pending.dropped.logs : 0;
+  const droppedTotal = pending ? pending.dropped.groups + pending.dropped.campaigns + pending.dropped.logs + pending.dropped.images : 0;
+  const imagesInFile = pending ? pending.backup.data.campaigns.reduce((sum, c) => sum + (c.images?.length ?? 0), 0) : 0;
 
   return (
     <div className="shell__stack">
@@ -85,9 +86,9 @@ export function BackupView() {
         <div className="card__head">
           <h2 id="backup-export">Xuất bản sao lưu</h2>
         </div>
-        <p>Lưu nhóm, chiến dịch, cài đặt và nhật ký vào một file JSON trên máy của bạn.</p>
+        <p>Lưu nhóm, chiến dịch (kèm ảnh đính kèm), cài đặt và nhật ký vào một file JSON trên máy của bạn.</p>
         <p className="notice" role="note">
-          File sao lưu chứa nội dung bài đăng, tên nhóm và nhật ký, chưa được mã hóa. Hãy giữ file ở nơi an toàn.
+          File sao lưu chứa nội dung bài đăng, tên nhóm, nhật ký và nay có thể chứa cả ảnh đính kèm của chiến dịch (file có thể nặng vài MB). File chưa được mã hóa. Hãy giữ file ở nơi an toàn.
         </p>
         <div className="backup__actions">
           <button className="button button--primary" type="button" onClick={() => void exportBackup()}>Xuất bản sao lưu</button>
@@ -143,9 +144,14 @@ export function BackupView() {
               </li>
               {droppedTotal > 0 && (
                 <li>
-                  {droppedTotal} mục không hợp lệ sẽ bị bỏ qua ({pending.dropped.groups} nhóm, {pending.dropped.campaigns} chiến dịch, {pending.dropped.logs} dòng nhật ký).
+                  {droppedTotal} mục không hợp lệ sẽ bị bỏ qua ({pending.dropped.groups} nhóm, {pending.dropped.campaigns} chiến dịch, {pending.dropped.logs} dòng nhật ký, {pending.dropped.images} ảnh).
                 </li>
               )}
+              <li>
+                {imagesInFile > 0
+                  ? `File có ${imagesInFile} ảnh đính kèm.${pending.preview.imagesDropped > 0 ? ` ${pending.preview.imagesDropped} ảnh sẽ bị bỏ qua vì vượt giới hạn tổng dung lượng ảnh.` : ''}`
+                  : 'File không có ảnh đính kèm.'}
+              </li>
               <li>Việc nhập không bao giờ tự bắt đầu một lượt chạy.</li>
             </ul>
             <div className="backup__actions">

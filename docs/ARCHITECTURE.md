@@ -48,7 +48,7 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 ## Data model (`src/lib/types.ts`)
 
 - `Group { id (slug), name, url }`
-- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, schedule?{enabled,times["HH:mm"]}, mode?: 'post' | 'comment', commentsPerGroup?, createdAt }` (no `mode` means a post campaign)
+- `Campaign { id, name, variations[], groupIds[], delay{minSec,maxSec}, safetyBreak{enabled,everyPosts,breakMinutes}, schedule?{enabled,times["HH:mm"]}, mode?: 'post' | 'comment', commentsPerGroup?, images?: CampaignImage[], removeLinkPreview?, createdAt }` (no `mode` means a post campaign)
 - `LogEntry { id, ts, campaignId, groupId, groupName, status, message }` (last 2000 kept)
 - `RunState { status, campaignId, queue[], total, attempted, consecutiveFailures, sinceBreak, nextAt, reason }`
 - `PostOutcome = posted | skipped | failed | fatal`
@@ -87,7 +87,7 @@ e2e/smoke.py                   Playwright smoke test against a local mock
 `src/lib/backup.ts` is pure; `storage.ts` adds `readBackupData` and `writeImportedData`; `BackupView` holds only state and events.
 
 - **File:** `{ app, formatVersion: 1, exportedAt, appVersion, data: { groups, campaigns, settings, logs } }`. `local:run`, `local:commentedPosts` and `local:scheduleCheck` are never exported.
-- **`parseBackup(text)`** refuses files over 5 MB, broken JSON, another `app` and a newer `formatVersion`. Otherwise it rebuilds every item from known fields only and passes values through `LIMITS`, `clampDelay`, `parseGroupSlug` and `validateTimes`. Invalid items are dropped and counted.
+- **`parseBackup(text)`** refuses files over 8 MB (`MAX_BACKUP_BYTES`, sized for the image limit), broken JSON, another `app` and a newer `formatVersion`. Otherwise it rebuilds every item from known fields only and passes values through `LIMITS`, `clampDelay`, `parseGroupSlug` and `validateTimes`. Invalid items are dropped and counted.
 - **`planImport(current, backup)`** merges without deleting. An existing id keeps the current item. Groups also match by canonical URL, and campaign `groupIds` follow the match. Imported schedules are set to `enabled: false`. Logs merge by id and keep the newest `LIMITS.maxLogEntries`. File settings apply only when the current settings are the defaults.
 - **Write:** the view merges again with fresh data on confirm. `writeImportedData` checks `isActive(run)` right before writing and refuses while a run is active. Nothing in this flow starts a run.
 
@@ -98,11 +98,19 @@ A campaign with `mode: 'comment'` goes through the same run engine; only the ste
 1. Open the group feed with `sorting_setting=RECENT_ACTIVITY` and ask the content script (`cap/discover-posts`) for posts it can identify: a post link plus a creation time within 24 hours (`fb-dom.findRecentGroupPosts`).
 2. Pick the first link not in `local:commentedPosts`. If none, the step is `skipped` and the rest of that group is skipped (`skipRemainingGroup`); a feed where no post can be identified is reported as such.
 3. Save the post link and a run-slot key in `commentedPosts` **before** opening the editor. Post links never expire; slot keys expire after 7 days. An uncertain submission is therefore never retried.
+   **Newest-posts mode (opt-in, `commentNewestPosts`):** on live Facebook (owner's console measurements, 2026-11-09, one group) newer feed posts show no link, no readable time and no `role="article"`; the feed items are plain `div` children of `[role="feed"]` and the time text is not exposed. So the 24-hour rule cannot be checked. This mode skips discovery, opens the group with `sorting_setting=CHRONOLOGICAL` and asks the content script (`cap/feed-pick`, `fb-dom.findNewestFeedPosts`) for one of the first `NEWEST_FEED_WINDOW` (8) feed items that holds exactly one comment editor and a comment button. It never scrolls. The post is remembered as `feed:<groupId>:<fingerprint>` in `commentedPosts` (fingerprint: short hash of the author from the comment button label and the start of the post text, see `postFingerprint`); like post links, these keys do not expire. The same reserve-before-typing rule applies, then `cap/feed-comment` types into the element chosen earlier and confirms inside that item only. Capped at `LIMITS.maxNewestPostComments` (5) per group. Verified on the local mock only; whether the sort parameter works and whether a comment lands on the right post is not confirmed on live Facebook.
 4. Open the post and send `cap/comment`. The content script counts a comment as sent only when a new visible comment appears and the editor is empty.
+
+## Post content: `{group}`, images, link preview
+
+- **`{group}`** (`src/lib/template.ts`, pure): `postToGroup` in `background.ts` is the only place that replaces it. It reads the stored group name right before building the `cap/post` request (after a name may have just been read from the page), so the content script and the log never see the template. A placeholder-only name (the slug) counts as unknown and becomes "bạn". A result over `LIMITS.maxPostLength` fails the group, like `validateCampaign` does for a raw post.
+- **Images** (`src/lib/images.ts`, pure checks; `src/ui/image-file.ts` shrinks with a canvas): stored as data URLs inside the campaign in `chrome.storage.local`, so they stay within the 10 MiB quota (4 MB of images is about 5.4 MB as base64) and no `unlimitedStorage` permission is needed. Limits are enforced when saving (UI), when starting a run (`validateCampaign`) and when importing a backup (`sanitizeImage`, which recomputes the size from the data).
+- **How images travel:** nothing is sent around in advance. The background puts `images` into the single `cap/post` request for one group, taken from the campaign it already holds in memory, and sends nothing for campaigns without images. This avoids a second storage read in the content script and keeps large strings out of any other message.
+- **Link preview:** `removeLinkPreview` rides in the same request.
 
 ## Content script
 
-`submitPost(text)` mimics a person: detect checkpoint/block/no-permission → find composer trigger → click → wait for dialog textbox → `execCommand('insertText')` → wait for enabled Post button → click → success when the dialog closes. Any structural mismatch returns `failed` with a readable reason; warnings return `fatal`.
+`submitPost(request)` mimics a person: detect checkpoint/block/no-permission → find composer trigger → click → wait for dialog textbox → `execCommand('insertText')` → (images: find the composer's file input, set the files with `DataTransfer`, send `input`/`change`, wait for the previews and for no progress bar; no input or no finish means `failed`, retryable because nothing was sent) → (link preview: wait once for the close button, click it if present) → wait for enabled Post button → click → success when the dialog closes. Any structural mismatch returns `failed` with a readable reason; warnings return `fatal`.
 
 ## Why these choices
 

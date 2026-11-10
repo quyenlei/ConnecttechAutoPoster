@@ -1,12 +1,14 @@
 import { clampDelay, recommendDelay } from './delay';
 import { canonicalGroupUrl, parseGroupSlug } from './groups';
 import { DEFAULT_SAFETY_BREAK, LIMITS } from './limits';
+import { sanitizeImage, totalImageBytes } from './images';
 import { normalizeTimes, validateTimes } from './schedule';
-import type { Campaign, CampaignSchedule, Group, LogEntry, LogStatus, SafetyBreak, Settings } from './types';
+import type { Campaign, CampaignImage, CampaignSchedule, Group, LogEntry, LogStatus, SafetyBreak, Settings } from './types';
 
 export const BACKUP_APP = 'connecttech-auto-poster';
 export const BACKUP_FORMAT_VERSION = 1;
-export const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
+/** Room for the image limit (4 MB of images is about 5.4 MB as base64) plus everything else. */
+export const MAX_BACKUP_BYTES = 8 * 1024 * 1024;
 
 const MAX_NAME_LENGTH = 200;
 const MAX_ID_LENGTH = 200;
@@ -34,6 +36,8 @@ export interface DroppedCounts {
   groups: number;
   campaigns: number;
   logs: number;
+  /** Images left out because they were invalid or over a limit. */
+  images: number;
 }
 
 export type ParseResult = { ok: true; backup: Backup; dropped: DroppedCounts } | { ok: false; error: string };
@@ -49,6 +53,8 @@ export interface ImportPreview {
   logs: ItemCounts;
   /** Imported campaigns whose schedule was on in the file and is now off. */
   schedulesTurnedOff: number;
+  /** Images of new campaigns that did not fit the total image limit. */
+  imagesDropped: number;
   /** False when the current settings were kept because they are not the defaults. */
   settingsApplied: boolean;
 }
@@ -123,7 +129,21 @@ function parseSafetyBreak(raw: unknown): SafetyBreak {
   };
 }
 
-function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: number): Campaign | null {
+function parseImages(raw: unknown): { images: CampaignImage[]; dropped: number } {
+  const list = asList(raw);
+  const images: CampaignImage[] = [];
+  const seen = new Set<string>();
+  for (const item of list.slice(0, LIMITS.maxImagesPerCampaign)) {
+    const image = sanitizeImage(item);
+    if (image && !seen.has(image.id)) {
+      seen.add(image.id);
+      images.push(image);
+    }
+  }
+  return { images, dropped: list.length - images.length };
+}
+
+function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: number): { campaign: Campaign; droppedImages: number } | null {
   if (!isObject(raw)) return null;
   const id = text(raw.id, MAX_ID_LENGTH);
   if (!id) return null;
@@ -152,10 +172,25 @@ function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: n
   if (raw.mode === 'comment') {
     campaign.mode = 'comment';
     campaign.commentsPerGroup = clampInt(raw.commentsPerGroup, 1, LIMITS.maxCommentsPerGroup, 1);
+    if (raw.commentNewestPosts === true) {
+      campaign.commentNewestPosts = true;
+      campaign.commentsPerGroup = Math.min(campaign.commentsPerGroup, LIMITS.maxNewestPostComments);
+    }
   }
   const schedule = parseSchedule(raw.schedule);
   if (schedule) campaign.schedule = schedule;
-  return campaign;
+
+  // Images and the link preview option belong to post campaigns only.
+  let droppedImages = 0;
+  if (campaign.mode === 'comment') {
+    droppedImages = asList(raw.images).length;
+  } else {
+    const parsed = parseImages(raw.images);
+    droppedImages = parsed.dropped;
+    if (parsed.images.length > 0) campaign.images = parsed.images;
+    if (raw.removeLinkPreview === true) campaign.removeLinkPreview = true;
+  }
+  return { campaign, droppedImages };
 }
 
 function parseLog(raw: unknown): LogEntry | null {
@@ -178,7 +213,7 @@ function parseLog(raw: unknown): LogEntry | null {
 /** Validates a backup file. Invalid items are dropped and counted; the file is only refused when it is unusable. */
 export function parseBackup(source: string): ParseResult {
   if (new TextEncoder().encode(source).length > MAX_BACKUP_BYTES) {
-    return { ok: false, error: 'File quá lớn. Giới hạn là 5 MB.' };
+    return { ok: false, error: `File quá lớn. Giới hạn là ${MAX_BACKUP_BYTES / 1024 / 1024} MB.` };
   }
   let root: unknown;
   try {
@@ -205,11 +240,13 @@ export function parseBackup(source: string): ParseResult {
   const { groups, idMap, dropped: droppedGroups } = parseGroups(rawGroups);
   const campaigns: Campaign[] = [];
   const campaignIds = new Set<string>();
+  let droppedImages = 0;
   for (const raw of rawCampaigns) {
-    const campaign = parseCampaign(raw, idMap, exportedAt);
-    if (campaign && !campaignIds.has(campaign.id)) {
-      campaignIds.add(campaign.id);
-      campaigns.push(campaign);
+    const parsed = parseCampaign(raw, idMap, exportedAt);
+    if (parsed && !campaignIds.has(parsed.campaign.id)) {
+      campaignIds.add(parsed.campaign.id);
+      campaigns.push(parsed.campaign);
+      droppedImages += parsed.droppedImages;
     }
   }
   const logs: LogEntry[] = [];
@@ -238,6 +275,7 @@ export function parseBackup(source: string): ParseResult {
       groups: droppedGroups,
       campaigns: rawCampaigns.length - campaigns.length,
       logs: rawLogs.length - logs.length,
+      images: droppedImages,
     },
   };
 }
@@ -277,6 +315,8 @@ export function planImport(current: BackupData, backup: Backup): ImportPlan {
   let campaignsAdded = 0;
   let campaignsExisting = 0;
   let schedulesTurnedOff = 0;
+  let imagesDropped = 0;
+  let imageBytes = campaigns.reduce((sum, c) => sum + totalImageBytes(c.images ?? []), 0);
   for (const campaign of backup.data.campaigns) {
     if (campaignIds.has(campaign.id)) {
       campaignsExisting++;
@@ -286,6 +326,13 @@ export function planImport(current: BackupData, backup: Backup): ImportPlan {
       ...campaign,
       groupIds: [...new Set(campaign.groupIds.map((id) => remap.get(id) ?? id).filter((id) => groupIds.has(id)))],
     };
+    if (campaign.images) {
+      // Images that would push the total over the limit are left out, never the whole campaign.
+      const fits = campaign.images.filter((image) => (imageBytes + image.bytes <= LIMITS.maxTotalImageBytes ? ((imageBytes += image.bytes), true) : false));
+      imagesDropped += campaign.images.length - fits.length;
+      if (fits.length > 0) imported.images = fits;
+      else delete imported.images;
+    }
     if (campaign.schedule) {
       if (campaign.schedule.enabled) schedulesTurnedOff++;
       imported.schedule = { enabled: false, times: [...campaign.schedule.times] };
@@ -309,6 +356,7 @@ export function planImport(current: BackupData, backup: Backup): ImportPlan {
       campaigns: { added: campaignsAdded, existing: campaignsExisting },
       logs: { added: newLogs.length, existing: backup.data.logs.length - newLogs.length },
       schedulesTurnedOff,
+      imagesDropped,
       settingsApplied,
     },
   };

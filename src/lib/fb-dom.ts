@@ -17,6 +17,10 @@ export const HINTS = {
     'tạo bài viết',
   ],
   post: ['post', 'đăng'],
+  /** Button in the composer that adds photos. Unverified on live Facebook. */
+  photo: ['photo/video', 'ảnh/video', 'photo', 'ảnh'],
+  /** Close button of the link preview card in the composer. Unverified on live Facebook. */
+  removePreview: ['remove preview', 'xóa bản xem trước', 'gỡ bản xem trước', 'xóa xem trước'],
   join: ['join group', 'tham gia nhóm', 'tham gia'],
   blocked: [
     "you're temporarily blocked",
@@ -94,6 +98,92 @@ export function findPostButton(doc: Document): HTMLElement | null {
     if (button) return button;
   }
   return null;
+}
+
+/** File input of the composer dialog that takes images. Null when the composer does not show one. */
+export function findImageInput(doc: Document): HTMLInputElement | null {
+  for (const input of doc.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="file"]')) {
+    if (/image\/|\.(jpe?g|png|webp)/i.test(input.getAttribute('accept') ?? '')) return input;
+  }
+  return null;
+}
+
+/** Button in the composer dialog that reveals the photo picker. */
+export function findPhotoButton(doc: Document): HTMLElement | null {
+  for (const dialog of doc.querySelectorAll('[role="dialog"]')) {
+    const button = findByText(dialog, '[role="button"]', HINTS.photo);
+    if (button) return button;
+  }
+  return null;
+}
+
+/** Close button of the link preview card inside the composer. Null when no card is shown. */
+export function findLinkPreviewCloseButton(doc: Document): HTMLElement | null {
+  for (const dialog of doc.querySelectorAll('[role="dialog"]')) {
+    const button = findByText(dialog, '[role="button"]', HINTS.removePreview);
+    if (button) return button;
+  }
+  return null;
+}
+
+/** Local image previews in the composer. Compare with the count before attaching. */
+export function countComposerImages(doc: Document): number {
+  return doc.querySelectorAll('[role="dialog"] img[src^="blob:"], [role="dialog"] img[src^="data:"]').length;
+}
+
+/** True while the composer still shows an upload in progress. */
+export function isComposerBusy(doc: Document): boolean {
+  return doc.querySelector('[role="dialog"] [role="progressbar"], [role="dialog"] [aria-busy="true"]') !== null;
+}
+
+/**
+ * Types text the way a person does: each line, then Enter (a new paragraph) between lines.
+ * One `insertText` call with "\n" inside lost every line break on Facebook's editor.
+ * `exec` is `document.execCommand`, passed in so this stays testable.
+ */
+export function insertLines(exec: (command: string, value?: string) => boolean, text: string): void {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  lines.forEach((line, index) => {
+    if (index > 0) exec('insertParagraph');
+    if (line) exec('insertText', line);
+  });
+}
+
+/** Fallback: hands the text to the editor as a paste of plain text. */
+export function pasteText(target: HTMLElement, text: string): void {
+  const data = new DataTransfer();
+  data.setData('text/plain', text);
+  target.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+}
+
+/** False when the text had line breaks but the editor shows none, so the post would be one block. */
+export function keptLineBreaks(textbox: HTMLElement, text: string): boolean {
+  if (!hasLineBreaks(text)) return true;
+  return /\n/.test((textbox.innerText ?? textbox.textContent ?? '').trim());
+}
+
+/** True when the text has a line break between visible lines (a leading or trailing one does not count). */
+export const hasLineBreaks = (text: string): boolean => /\n/.test(text.replace(/\r\n?/g, '\n').trim());
+
+/**
+ * True when the editor holds the text about twice. Whitespace is ignored because Facebook
+ * renders line breaks its own way. Very short texts are not checked.
+ */
+export function isDuplicatedText(actual: string, expected: string): boolean {
+  const squash = (value: string) => value.replace(/\s+/g, '');
+  const want = squash(expected);
+  return want.length >= 20 && squash(actual).length >= want.length * 1.8;
+}
+
+/** Gives a file input its files the way a drop or picker would, using standard browser APIs only. */
+export function setInputFiles(input: HTMLInputElement, files: readonly File[]): boolean {
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+  if (input.files?.length !== files.length) return false;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 }
 
 /**
@@ -267,7 +357,7 @@ export function countCommentEditors(doc: Document): number {
 }
 
 /** Count rendered comment-like text outside editors to detect a new visible occurrence. */
-export function countVisibleCommentText(doc: Document, text: string): number {
+export function countVisibleCommentText(doc: ParentNode, text: string): number {
   const expected = text.trim();
   if (!expected) return 0;
   return [...doc.querySelectorAll<HTMLElement>('[dir="auto"]')].filter((el) =>
@@ -282,11 +372,111 @@ export function findCommentTextbox(doc: Document): HTMLElement | null {
   return boxes.length === 1 ? boxes[0]! : null;
 }
 
-/** Scope the send button to the editor's form (or its article for older markup). */
+const SEND_LABEL = /^(post comment|send comment|send|bình luận|đăng bình luận|gửi bình luận|gửi)$/i;
+
+/**
+ * Scope the send button to the editor's form (or its article for older markup). Feed items have an action
+ * bar with its own "Bình luận" button, so the search starts at the editor and widens one ancestor at a time;
+ * the first level with a match wins and, among several, the one after the editor in page order.
+ */
 export function findCommentButton(textbox: HTMLElement): HTMLElement | null {
-  const root = textbox.closest('form') ?? textbox.closest('[role="article"], article');
-  if (!root) return null;
-  const buttons = [...root.querySelectorAll<HTMLElement>('[role="button"], button')]
-    .filter((el) => /^(post comment|send comment|send|bình luận|đăng bình luận|gửi bình luận|gửi)$/i.test((el.getAttribute('aria-label') ?? '').trim()));
-  return buttons.length === 1 ? buttons[0]! : null;
+  const limit = textbox.closest('form') ?? textbox.closest('[role="article"], article');
+  if (!limit) return null;
+  for (let node = textbox.parentElement; node; node = node.parentElement) {
+    const buttons = [...node.querySelectorAll<HTMLElement>('[role="button"], button')]
+      .filter((el) => SEND_LABEL.test((el.getAttribute('aria-label') ?? '').trim()) && !textbox.contains(el));
+    const after = buttons.filter((el) => textbox.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (after.length > 0) return after[0]!;
+    if (buttons.length === 1) return buttons[0]!;
+    if (node === limit) break;
+  }
+  return null;
+}
+
+/** Diagnostic only: the aria-labels of the buttons near the editor, to learn what Facebook renders. */
+export function describeCommentButtons(textbox: HTMLElement): string {
+  const root = textbox.closest('form') ?? textbox.closest('[role="article"], article') ?? textbox.parentElement;
+  const labels = [...(root?.querySelectorAll<HTMLElement>('[role="button"], button') ?? [])]
+    .map((el) => `${(el.getAttribute('aria-label') ?? '').trim() || '(không nhãn)'}${isEnabled(el) ? '' : ' [tắt]'}`);
+  return `${textbox.closest('form') ? 'có form' : 'không form'}; nút: ${labels.slice(0, 12).join(' | ') || 'không có'}`;
+}
+
+/** Short non-reversible tag used to remember a feed post that has no ID. Only the tag is stored, never the text. */
+export function postFingerprint(author: string, body: string): string {
+  const input = `${author.trim().replace(/\s+/g, ' ').slice(0, 80)}|${body.trim().replace(/\s+/g, ' ').slice(0, 160)}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+export interface NewestPost {
+  element: HTMLElement;
+  fingerprint: string;
+  /** The one comment editor inside this feed item. */
+  textbox: HTMLElement;
+}
+
+/** How many of the first feed items are looked at when the newest posts are wanted. */
+export const NEWEST_FEED_WINDOW = 8;
+
+const AUTHOR_IN_LABEL = /(?:bình luận về bài viết của|comment on)\s+(.+?)(?:'s post)?(?:,\s*\d+\s+.+)?$/i;
+
+/**
+ * Newest-posts mode. The group feed is sorted by newest posts; Facebook shows no post time or link there,
+ * so the age is NOT known. Items are the direct children of `[role="feed"]` that hold exactly one
+ * comment editor and a comment button. Only the first few items are considered, in page order.
+ * Markup taken from the owner's console measurements on live Facebook (2026-11-09); not yet confirmed by a live comment.
+ */
+export function findNewestFeedPosts(doc: Document, limit = NEWEST_FEED_WINDOW): NewestPost[] {
+  const feed = doc.querySelector('[role="feed"]');
+  if (!feed) return [];
+  const posts: NewestPost[] = [];
+  for (const item of [...feed.children].slice(0, limit)) {
+    if (!(item instanceof HTMLElement)) continue;
+    const editors = item.querySelectorAll<HTMLElement>('[contenteditable="true"]');
+    if (editors.length !== 1) continue;
+    const labels = [...item.querySelectorAll<HTMLElement>('[role="button"], button')].map((b) => b.getAttribute('aria-label') ?? '').filter((t) => /bình luận|comment/i.test(t));
+    if (labels.length === 0) continue;
+    const author = labels.map((t) => AUTHOR_IN_LABEL.exec(t.trim())?.[1] ?? '').find((a) => a) ?? '';
+    let body = '';
+    for (const el of item.querySelectorAll<HTMLElement>('[dir="auto"]')) {
+      if (el.children.length > 0 || el.closest('[contenteditable="true"]')) continue;
+      const t = (el.textContent ?? '').trim();
+      if (t.length > body.length) body = t;
+    }
+    if (!body) {
+      // Text wrapped in nested elements has no leaf: take the first text block in page order (the post body comes
+      // right after the header and does not change when comments are added). Without it every post by one author
+      // would share one fingerprint and only the first could ever be commented.
+      for (const el of item.querySelectorAll<HTMLElement>('[dir="auto"]')) {
+        if (el.closest('[contenteditable="true"]')) continue;
+        const t = (el.textContent ?? '').trim();
+        if (t && t !== author) { body = t.slice(0, 160); break; }
+      }
+    }
+    if (!author && !body) continue;
+    posts.push({ element: item, fingerprint: postFingerprint(author, body), textbox: editors[0]! });
+  }
+  return posts;
+}
+
+/** Diagnostic only: why each of the first feed items was or was not accepted by `findNewestFeedPosts`. */
+export function describeFeedItems(doc: Document, limit = NEWEST_FEED_WINDOW): string {
+  const feed = doc.querySelector('[role="feed"]');
+  if (!feed) return 'không có [role=feed]';
+  return [...feed.children].slice(0, limit).map((item, index) => {
+    const editors = item.querySelectorAll('[contenteditable="true"]').length;
+    const labels = [...item.querySelectorAll<HTMLElement>('[role="button"], button')].filter((b) => /bình luận|comment/i.test(b.getAttribute('aria-label') ?? '')).length;
+    const hasText = [...item.querySelectorAll<HTMLElement>('[dir="auto"]')].some((el) => (el.textContent ?? '').trim());
+    return `#${index + 1}: ô=${editors}, nút bình luận=${labels}, chữ=${hasText ? 'có' : 'không'}`;
+  }).join('; ');
+}
+
+/** Presses Enter in an editor the way a keyboard does (keydown, keypress, keyup). Feed comment forms submit on it. */
+export function pressEnter(target: HTMLElement): void {
+  const init: KeyboardEventInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+  for (const type of ['keydown', 'keypress', 'keyup']) target.dispatchEvent(new KeyboardEvent(type, init));
 }

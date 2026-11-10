@@ -1,9 +1,19 @@
 import type { PostOutcome } from './types';
 
 /** Background -> content script (group page). */
+export interface PostImage {
+  name: string;
+  mime: string;
+  dataUrl: string;
+}
+
 export interface PostRequest {
   type: 'cap/post';
+  /** Final text: placeholders are already replaced by the background. */
   text: string;
+  /** Sent with the post request only, read from the campaign at that moment. */
+  images?: PostImage[];
+  removeLinkPreview?: boolean;
 }
 
 export interface DiscoverRequest {
@@ -16,6 +26,30 @@ export interface DiscoverReply {
   diagnostic?: string;
   problem?: { kind: 'fatal' | 'skipped' | 'failed'; reason: string };
 }
+
+/** Newest-posts mode: pick one of the first feed posts of the open group page, then comment on it. */
+export interface FeedPickRequest {
+  type: 'cap/feed-pick';
+  /** Fingerprints (see `postFingerprint`) already tried. */
+  skip: string[];
+}
+
+export interface FeedPickReply {
+  fingerprint?: string;
+  diagnostic?: string;
+  problem?: { kind: 'fatal' | 'skipped' | 'failed'; reason: string };
+}
+
+export interface FeedCommentRequest {
+  type: 'cap/feed-comment';
+  text: string;
+}
+
+export const isFeedPickRequest = (m: unknown): m is FeedPickRequest =>
+  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-pick' && Array.isArray((m as { skip?: unknown }).skip) && (m as { skip: unknown[] }).skip.every((v) => typeof v === 'string');
+
+export const isFeedCommentRequest = (m: unknown): m is FeedCommentRequest =>
+  typeof m === 'object' && m !== null && (m as { type?: unknown }).type === 'cap/feed-comment' && typeof (m as { text?: unknown }).text === 'string';
 
 export interface CommentRequest {
   type: 'cap/comment';
