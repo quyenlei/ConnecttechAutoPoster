@@ -179,6 +179,12 @@ describe('parseBackup: campaigns', () => {
     expect(low.backup.data.campaigns[0]?.commentsPerGroup).toBe(1);
   });
 
+  it('preserves safe mode only for comment campaigns', () => {
+    const result = parseOk(wrap({ campaigns: [campaign({ mode: 'comment', safeMode: true }), campaign({ id: 'other', safeMode: true })] }));
+    expect(result.backup.data.campaigns[0]?.safeMode).toBe(true);
+    expect(result.backup.data.campaigns[1]).not.toHaveProperty('safeMode');
+  });
+
   it('treats an unknown mode as a post campaign', () => {
     const result = parseOk(wrap({ campaigns: [campaign({ mode: 'weird' as never })] }));
     expect(result.backup.data.campaigns[0]?.mode).toBeUndefined();
