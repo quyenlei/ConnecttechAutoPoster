@@ -2,7 +2,7 @@ import { storage } from 'wxt/utils/storage';
 import { LIMITS } from './limits';
 import type { BackupData } from './backup';
 import { IDLE_RUN, isActive } from './run-engine';
-import type { Campaign, Group, LogEntry, RunState, Settings } from './types';
+import type { Campaign, CommentTab, Group, JoinedScan, LogEntry, RunState, Settings } from './types';
 
 /** All data stays in chrome.storage.local on this device. Nothing is sent anywhere. */
 export const groupsItem = storage.defineItem<Group[]>('local:groups', { fallback: [] });
@@ -13,6 +13,10 @@ export const DEFAULT_SETTINGS: Settings = { notifyOnFinish: false };
 export const settingsItem = storage.defineItem<Settings>('local:settings', { fallback: DEFAULT_SETTINGS });
 /** Reserved before submitting so an interrupted run cannot retry the same post. */
 export const commentedPostsItem = storage.defineItem<Record<string, number>>('local:commentedPosts', { fallback: {} });
+/** Window of the running comment campaign. Never exported in a backup. */
+export const commentTabItem = storage.defineItem<CommentTab | null>('local:commentTab', { fallback: null });
+/** Preview of the user's joined groups. Never exported in a backup. */
+export const joinedScanItem = storage.defineItem<JoinedScan | null>('local:joinedScan', { fallback: null });
 /** Epoch ms of the last time due schedule slots were processed. */
 export const scheduleCheckItem = storage.defineItem<number | null>('local:scheduleCheck', { fallback: null });
 

@@ -8,16 +8,10 @@ import {
   findJoinButton,
   describeDialogState,
   findPostButton,
-  findRecentGroupPosts,
-  findNewestFeedPosts,
-  NEWEST_FEED_WINDOW,
-  type NewestPost,
-  findCommentTextbox,
   findCommentButton,
-  describeFeedItems,
   describeCommentButtons,
   pressEnter,
-  countCommentEditors,
+  pressEscape,
   countComposerImages,
   findImageInput,
   findLinkPreviewCloseButton,
@@ -34,31 +28,43 @@ import {
   isEnabled,
   readGroupName,
   waitFor,
+  findFeedItems,
+  isFeedItemRendered,
+  readFeedPost,
+  readStructuredPostTimes,
+  findMyName,
+  findTimestampTargets,
+  hoverOver,
+  hoverOut,
+  findItemEditor,
+  findItemCommentAction,
+  findDialogCommentEditor,
+  findJoinedGroupsSection,
+  joinedGroupsCount,
+  readJoinedGroups,
+  type FeedPost,
 } from '@/lib/fb-dom';
+import { commentKeys, describeScan, emptyCounts, feedIsExhausted, judgeFeedPost, type FeedCandidate, type SkipReason } from '@/lib/comment-pick';
 import { dataUrlToBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
-import { isFeedCommentRequest, isFeedPickRequest, isGroupNameRequest, isPostRequest, type FeedPickReply, type GroupNameReply, type DiscoverReply, type PostRequest } from '@/lib/messages';
+import { isFeedCommentRequest, isFeedPickRequest, isGroupNameRequest, isJoinedGroupsRequest, isPostRequest, type FeedCommentRequest, type FeedPickReply, type FeedPickRequest, type GroupNameReply, type JoinedGroupsReply, type PostRequest } from '@/lib/messages';
 import type { PostOutcome } from '@/lib/types';
 
 export default defineContentScript({
   matches: ['*://*.facebook.com/groups/*'],
   runAt: 'document_idle',
   main() {
-    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome | GroupNameReply | DiscoverReply | FeedPickReply) => void) => {
+    browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (o: PostOutcome | GroupNameReply | FeedPickReply | JoinedGroupsReply) => void) => {
+      if (isJoinedGroupsRequest(message)) {
+        readJoinedList().then(sendResponse, () => sendResponse({ groups: [], problem: { fatal: false, reason: 'Không đọc được danh sách nhóm.' } }));
+        return true;
+      }
       if (isFeedPickRequest(message)) {
-        pickNewestPost(message.skip).then(sendResponse, () => sendResponse({ problem: { kind: 'failed', reason: 'Không thể quét bài viết trong feed.' } }));
+        pickFeedPost(message).then(sendResponse, () => sendResponse({ problem: { kind: 'failed', reason: 'Không thể quét bài viết trong feed.' } }));
         return true;
       }
       if (isFeedCommentRequest(message)) {
-        commentOnPickedPost(message.text).then(sendResponse, (e: unknown) => sendResponse({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }));
-        return true;
-      }
-      if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'cap/discover-posts' && 'groupId' in message && typeof message.groupId === 'string') {
-        discoverPosts(message.groupId).then(sendResponse, () => sendResponse({ urls: [], problem: { kind: 'failed', reason: 'Không thể quét bài viết trong nhóm.' } }));
-        return true;
-      }
-      if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'cap/comment' && 'text' in message && typeof message.text === 'string') {
-        submitComment(message.text).then(sendResponse, (e: unknown) => sendResponse({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }));
+        commentOnPickedPost(message).then(sendResponse, (e: unknown) => sendResponse({ kind: 'failed', reason: e instanceof Error ? e.message : String(e) }));
         return true;
       }
       if (isGroupNameRequest(message)) {
@@ -83,42 +89,167 @@ async function readName(): Promise<GroupNameReply> {
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Read-only scan. The feed may load asynchronously and need scrolling to reveal more posts. */
-async function discoverPosts(groupId: string): Promise<DiscoverReply> {
-  const found = new Map<string, number>();
-  let maxArticles = 0;
-  let maxDates = 0;
-  let maxEditors = 0;
-  await waitFor(() => document.querySelector('[role="article"], article') || countCommentEditors(document) > 0 || detectPageProblem(document, location.pathname) || findJoinButton(document), 10_000);
-  for (let pass = 0; pass < 5; pass++) {
-    const problem = detectPageProblem(document, location.pathname);
-    if (problem) return { urls: [], problem: { kind: problem.kind === 'fatal' ? 'fatal' : 'skipped', reason: problem.reason } };
-    if (findJoinButton(document)) return { urls: [], problem: { kind: 'skipped', reason: 'Bạn chưa là thành viên của nhóm này.' } };
-    maxArticles = Math.max(maxArticles, document.querySelectorAll('[role="article"], article').length);
-    maxDates = Math.max(maxDates, document.querySelectorAll('[role="article"] time[datetime], article time[datetime]').length);
-    maxEditors = Math.max(maxEditors, countCommentEditors(document));
-    for (const post of findRecentGroupPosts(document, groupId, Date.now())) found.set(post.url, post.postedAt);
-    if (pass < 4) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      await pause(2_000);
-    }
+/**
+ * Read-only: scrolls facebook.com/groups/joins/ until the "groups you joined" list stops growing, then returns
+ * the groups in it. Pending join requests are a separate section and are left out. Nothing is clicked.
+ */
+async function readJoinedList(): Promise<JoinedGroupsReply> {
+  const problem = detectPageProblem(document, location.pathname);
+  if (problem?.kind === 'fatal') return { groups: [], problem: { fatal: true, reason: problem.reason } };
+  if (!(await waitFor(() => findJoinedGroupsSection(document), 15_000))) {
+    return { groups: [], problem: { fatal: false, reason: 'Không thấy mục "Tất cả các nhóm bạn đã tham gia" (có thể Facebook đã đổi giao diện).' } };
   }
-  if (found.size === 0 && maxEditors > 0 && maxArticles === 0) {
-    return { urls: [], problem: { kind: 'failed', reason: `Phát hiện tối đa ${maxEditors} ô bình luận, nhưng không xác định được bài viết và thời gian đăng từ DOM Facebook.` } };
-  }
-  return {
-    urls: [...found].sort((a, b) => b[1] - a[1]).slice(0, 500).map(([url]) => url),
-    diagnostic: `Thấy tối đa ${maxArticles} bài trên trang, ${maxDates} bài có thẻ time, xác định được ${found.size} bài trong 24 giờ. Facebook không cho biết ID của các bài còn lại (chỉ hiện sau khi rê chuột), nên extension bỏ qua chúng.`,
+  const read = () => {
+    const section = findJoinedGroupsSection(document);
+    return section ? readJoinedGroups(section) : [];
   };
+  const deadline = Date.now() + LIMITS.joinedScanTimeoutMs;
+  let count = read().length;
+  let unchanged = 0;
+  while (count < LIMITS.maxJoinedGroups && unchanged < 3 && Date.now() < deadline) {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const before = count;
+    await waitFor(() => read().length > before, LIMITS.feedRenderWaitMs, 250);
+    count = read().length;
+    unchanged = count > before ? 0 : unchanged + 1;
+  }
+  const expected = joinedGroupsCount(document);
+  return { groups: read().slice(0, LIMITS.maxJoinedGroups), ...(expected !== null ? { expected } : {}) };
 }
 
-async function submitComment(text: string): Promise<PostOutcome> {
+const asCandidate = (post: FeedPost): FeedCandidate => ({
+  fingerprint: post.fingerprint,
+  url: post.url,
+  age: post.age,
+  mine: post.mine,
+  canComment: post.editor !== null || post.commentAction !== null,
+});
+
+/** The post chosen by the last scan. It stays in this page so the comment goes to exactly that element. */
+let picked: { fingerprint: string; post: FeedPost } | null = null;
+/** Items whose post time was already looked for by hovering, so a later scan of the same page does not repeat it. */
+const hovered = new WeakSet<HTMLElement>();
+
+/** Scrolls to the end of the loaded feed and waits for Facebook to append more posts. */
+async function loadMore(count: number): Promise<boolean> {
+  window.scrollTo(0, document.documentElement.scrollHeight);
+  return (await waitFor(() => findFeedItems(document).length > count, LIMITS.feedRenderWaitMs * 2, 250)) !== null;
+}
+
+/**
+ * Facebook shows the post time and link only while the pointer is over the time label. Hover each likely
+ * label of the post header once, read the post again, and leave. Nothing is clicked.
+ */
+async function revealTime(item: HTMLElement, read: () => FeedPost): Promise<FeedPost> {
+  hovered.add(item);
+  for (const target of findTimestampTargets(item)) {
+    hoverOver(target);
+    const found = await waitFor(() => {
+      const post = read();
+      return post.age || post.url ? post : null;
+    }, LIMITS.hoverWaitMs, 150);
+    hoverOut(target);
+    if (found) return found;
+  }
+  return read();
+}
+
+/**
+ * Walks the group feed from the top, one post at a time: brings each into view (Facebook renders posts only
+ * near the viewport), reads it, and scrolls to load more when the loaded ones run out. Stops at the first
+ * post that can be commented, or when the limits in `LIMITS` are reached. Nothing is typed here.
+ */
+async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
+  picked = null;
+  const deadline = Date.now() + LIMITS.feedScanTimeoutMs;
+  await waitFor(() => findFeedItems(document).length > 0 || detectPageProblem(document, location.pathname) || findJoinButton(document), 15_000);
+  const problem = detectPageProblem(document, location.pathname);
+  if (problem) return { problem: { kind: problem.kind === 'fatal' ? 'fatal' : 'skipped', reason: problem.reason } };
+  if (findFeedItems(document).length === 0) {
+    if (findJoinButton(document)) return { problem: { kind: 'skipped', reason: 'Bạn chưa là thành viên của nhóm này.' } };
+    return { problem: { kind: 'failed', reason: 'Không thấy danh sách bài viết của nhóm (có thể Facebook đã đổi giao diện).' } };
+  }
+  const tried = new Set(request.tried);
+  const structured = readStructuredPostTimes(document, request.groupId);
+  const limit = request.mode === 'newest' ? LIMITS.newestFeedWindow : LIMITS.feedScanMaxPosts;
+  const counts = emptyCounts();
+  const reasons: (SkipReason | null)[] = [];
+  const trace: string[] = [];
+  let myName: string | null = null;
+  let seen = 0;
+  let index = 0;
+  let timedOut = false;
+  while (seen < limit) {
+    if (Date.now() > deadline) { timedOut = true; break; }
+    const items = findFeedItems(document);
+    const item = items[index];
+    if (!item) {
+      if (!(await loadMore(items.length))) break;
+      continue;
+    }
+    index++;
+    item.scrollIntoView({ block: 'center' });
+    if (!(await waitFor(() => isFeedItemRendered(item), LIMITS.feedRenderWaitMs, 200))) {
+      trace.push(`#${index - 1}:chưa hiển thị`);
+      continue;
+    }
+    myName ??= findMyName(document);
+    const read = () => readFeedPost(item, { groupId: request.groupId, now: Date.now(), myName, ownTexts: request.ownTexts, structured });
+    let post = read();
+    // Banners and section headers in the feed have neither text nor a way to comment.
+    if (!post.fingerprint && !post.url && !post.editor && !post.commentAction) continue;
+    seen++;
+    let reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
+    if (!post.age && !hovered.has(item) && (reason === 'age-unknown' || reason === null)) {
+      post = await revealTime(item, read);
+      reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
+    }
+    reasons.push(reason);
+    trace.push(`#${index - 1}:${post.fingerprint ?? '-'}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
+    const id = post.fingerprint ?? post.url;
+    if (reason === null && id) {
+      picked = { fingerprint: id, post };
+      const age = post.age ? `, đăng khoảng ${Math.max(1, Math.round(post.age.minAgeMs / 60_000))} phút trước${post.age.label ? ` (nhãn: "${post.age.label}")` : ''}` : ', không rõ giờ đăng';
+      return { fingerprint: id, keys: commentKeys(request.groupId, post), trace, diagnostic: `Chọn bài thứ ${seen} trong feed${age}.` };
+    }
+    counts[reason ?? 'unidentified']++;
+    if (request.mode === 'recent' && feedIsExhausted(reasons)) break;
+  }
+  const notes = [
+    timedOut ? 'Hết thời gian quét.' : '',
+    document.visibilityState === 'hidden' ? 'Cửa sổ bình luận đang bị ẩn hoặc thu nhỏ nên Facebook có thể không tải bài; hãy để cửa sổ đó hiển thị.' : '',
+  ].filter(Boolean);
+  return { trace, diagnostic: [describeScan(counts, seen), ...notes].join(' ') };
+}
+
+/** Comments on the post chosen by the last scan. Opens its editor with the post's own "Bình luận" button when needed. */
+async function commentOnPickedPost(request: FeedCommentRequest): Promise<PostOutcome> {
+  const choice = picked;
+  picked = null;
+  // Nothing was typed in any of the early returns below, so they are safe to release (`retryable`).
+  if (!choice || choice.fingerprint !== request.fingerprint || !choice.post.element.isConnected) {
+    return { kind: 'failed', reason: 'Bài đã chọn trong feed không còn trên trang.', retryable: true };
+  }
   const problem = detectPageProblem(document, location.pathname);
   if (problem) return { kind: problem.kind === 'fatal' ? 'fatal' : 'skipped', reason: problem.reason };
-  if (!text.trim()) return { kind: 'failed', reason: 'Bình luận đang trống.' };
-  const textbox = await waitFor(() => findCommentTextbox(document), 15_000);
-  if (!textbox) return { kind: 'failed', reason: 'Không xác định được duy nhất một ô bình luận trên trang bài viết.' };
-  return typeAndSendComment(textbox, document, text);
+  if (!request.text.trim()) return { kind: 'failed', reason: 'Bình luận đang trống.' };
+  const item = choice.post.element;
+  item.scrollIntoView({ block: 'center' });
+  let editor = findItemEditor(item);
+  let scope: ParentNode = item;
+  let inDialog = false;
+  if (!editor) {
+    const action = findItemCommentAction(item);
+    if (!action) return { kind: 'failed', reason: 'Bài không có ô bình luận.', retryable: true };
+    action.click();
+    editor = await waitFor(() => findItemEditor(item) ?? findDialogCommentEditor(document), 6_000);
+    const dialog = editor && !item.contains(editor) ? editor.closest('[role="dialog"]') : null;
+    if (dialog) { scope = dialog; inDialog = true; }
+  }
+  if (!editor) return { kind: 'failed', reason: 'Đã bấm "Bình luận" nhưng không thấy ô bình luận.', retryable: true };
+  const outcome = await typeAndSendComment(editor, scope, request.text);
+  if (inDialog) pressEscape(document.activeElement instanceof HTMLElement ? document.activeElement : document.body);
+  return outcome;
 }
 
 /** Types the comment, sends it and waits until it shows up inside `scope`. */
@@ -161,55 +292,6 @@ async function typeAndSendComment(textbox: HTMLElement, scope: ParentNode, text:
   const late = detectPageProblem(document, location.pathname);
   if (late?.kind === 'fatal') return { kind: 'fatal', reason: late.reason };
   return confirmed ? { kind: 'posted' } : { kind: 'failed', reason: 'Đã gửi thao tác bình luận nhưng chưa thấy bình luận mới trên trang; hãy kiểm tra trước khi thử lại.' };
-}
-
-let pickedPost: NewestPost | null = null;
-
-/**
- * Read-only, no scrolling (scrolling would load older posts): chooses the first of the newest feed posts
- * that was not tried yet. The post's age is not known. The choice is kept in memory so the next message
- * can comment on that exact element.
- */
-async function pickNewestPost(skip: string[]): Promise<FeedPickReply> {
-  pickedPost = null;
-  await waitFor(() => findNewestFeedPosts(document).length > 0 || detectPageProblem(document, location.pathname) || findJoinButton(document), 12_000);
-  const problem = detectPageProblem(document, location.pathname);
-  if (problem) return { problem: { kind: problem.kind === 'fatal' ? 'fatal' : 'skipped', reason: problem.reason } };
-  if (findJoinButton(document)) return { problem: { kind: 'skipped', reason: 'Bạn chưa là thành viên của nhóm này.' } };
-  let posts = findNewestFeedPosts(document);
-  if (!posts.some((post) => !skip.includes(post.fingerprint))) {
-    // Items below the fold are placeholders until they are near the viewport. Bring only the first few into view
-    // (never the end of the feed, which would load older posts), then look again.
-    // Placeholders fill in slowly (especially in a background tab), so keep looking for up to 12 s.
-    const deadline = Date.now() + 12_000;
-    while (Date.now() < deadline) {
-      for (const item of [...(document.querySelector('[role="feed"]')?.children ?? [])].slice(0, NEWEST_FEED_WINDOW)) {
-        item.scrollIntoView({ block: 'center' });
-        await pause(400);
-      }
-      posts = findNewestFeedPosts(document);
-      if (posts.some((post) => !skip.includes(post.fingerprint))) break;
-      await pause(1_000);
-    }
-  }
-  const next = posts.find((post) => !skip.includes(post.fingerprint));
-  if (next) {
-    pickedPost = next;
-    next.element.scrollIntoView({ block: 'center' });
-    return { fingerprint: next.fingerprint, diagnostic: `Chọn 1 trong ${posts.length} bài đầu feed.` };
-  }
-  const items = document.querySelector('[role="feed"]')?.children.length ?? 0;
-  return { diagnostic: `Feed có ${items} mục, ${posts.length} trong ${NEWEST_FEED_WINDOW} mục đầu có ô bình luận riêng${posts.length > 0 ? ', nhưng tất cả đã được thử trước đó' : ''}. Chi tiết: ${describeFeedItems(document)}.` };
-}
-
-async function commentOnPickedPost(text: string): Promise<PostOutcome> {
-  const post = pickedPost;
-  pickedPost = null;
-  if (!post || !post.element.isConnected || !post.textbox.isConnected) return { kind: 'failed', reason: 'Bài đã chọn trong feed không còn trên trang.' };
-  const problem = detectPageProblem(document, location.pathname);
-  if (problem) return { kind: problem.kind === 'fatal' ? 'fatal' : 'skipped', reason: problem.reason };
-  if (!text.trim()) return { kind: 'failed', reason: 'Bình luận đang trống.' };
-  return typeAndSendComment(post.textbox, post.element, text);
 }
 
 /**

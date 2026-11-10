@@ -12,14 +12,14 @@ A local-first Chrome extension that helps you post to the Facebook groups **you 
 
 | Area | What works |
 |---|---|
-| Groups | Paste group links (one per line, optional name), duplicates and non-group links rejected |
+| Groups | Paste group links (one per line, optional name), or import the groups you joined from Facebook (opt-in, preview, you pick); duplicates and non-group links rejected |
 | Campaigns | Several saved campaigns, 1–10 post versions rotating across groups, up to 100 groups |
 | Timing | Random wait range (min 30 s), recommended delay by group count, warnings for risky settings, time estimate |
 | Safety | Safety Break every N posts, auto-pause after 5 failures in a row, immediate halt on checkpoint or "temporarily blocked", skip groups you cannot post in |
 | Run control | Pause, Resume, Stop, continue a stopped run, one retry after temporary errors, live countdown, progress, survives browser/service-worker restarts |
 | Activity | Filter by status (including posts waiting for admin approval), export CSV (spreadsheet-formula safe), clear |
 | Overview | Sent and failed counts for today and the last 7 days, success rate, opt-in desktop notifications |
-| Comments | Comment campaigns: comment on recent posts (last 24 h) in each group, with a per-group limit and local protection against commenting on the same post twice |
+| Comments | Comment campaigns: comment on recent posts (last 24 h) in each group. Scans the feed in a visible tab of your current window with scrolling, reads the post time (hovering the time label when needed), skips posts you already commented on, per-group limit and local protection against commenting twice (mock-tested only) |
 | Schedule | Optional daily start times (max 2 per campaign, at least 6 h apart) |
 | UI | Light/dark automatically, keyboard accessible, Vietnamese UI |
 
@@ -72,7 +72,7 @@ Start with 5–10 groups and the recommended delay.
 - Facebook offers **no public API** for posting to groups. CAP drives the visible web UI like a person would, so it can break when Facebook changes its markup. All selectors live in [`src/lib/fb-dom.ts`](src/lib/fb-dom.ts) with English and Vietnamese hints.
 - Browser must stay open; the posting tabs open in the background and close themselves.
 - Text posts and text comments only (no photos or link previews). Scheduling is limited to fixed daily times, max 2 per campaign (v0.2).
-- Comment campaigns depend on Facebook exposing a post link and time in the feed; when CAP cannot identify a post it skips the group instead of guessing.
+- Comment campaigns need their Facebook tab to be the visible tab, and depend on Facebook showing the post time (directly or under the pointer); when CAP cannot tell a post's age it skips the post instead of guessing (except in the opt-in newest-posts mode).
 - Automating Facebook can violate its Terms and can get an account limited. You are responsible for your use. See [docs/SAFETY_AND_PRIVACY.md](docs/SAFETY_AND_PRIVACY.md).
 
 ## Origin and independence

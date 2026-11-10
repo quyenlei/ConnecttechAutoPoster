@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cleanGroupTitle, countCommentEditors, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, findRecentGroupPosts, findNewestFeedPosts, postFingerprint, findCommentTextbox, findCommentButton, describeCommentButtons, pressEnter, describeFeedItems, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
+import { cleanGroupTitle, countVisibleCommentText, describeDialogState, detectPageProblem, detectPendingApproval, isComposerSubmitted, findComposerTrigger, findDialogTextbox, findJoinButton, findPostButton, postFingerprint, findCommentButton, describeCommentButtons, pressEnter, pressEscape, parseAgeLabel, parseFacebookDate, readStructuredPostTimes, findFeedItems, isFeedItemRendered, readFeedPost, findMyName, hasMyComment, findItemEditor, findItemCommentAction, findTimestampTargets, hoverOver, hoverOut, findDialogCommentEditor, findJoinedGroupsSection, joinedGroupsCount, readJoinedGroups, type FeedReadContext, insertLines, keptLineBreaks, pasteText, isDuplicatedText, hasLineBreaks, findImageInput, findPhotoButton, findLinkPreviewCloseButton, countComposerImages, isComposerBusy, setInputFiles, isEnabled, readGroupName, waitFor } from '../src/lib/fb-dom';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -105,82 +105,226 @@ describe('group name', () => {
   });
 });
 
-it('selects only identifiable posts from this group within the last 24 hours', () => {
-  document.body.innerHTML = `
-    <article><time datetime="2026-11-05T10:00:00Z"></time><a href="https://www.facebook.com/groups/abc/posts/1/">post</a></article>
-    <article><time datetime="2026-11-04T09:00:00Z"></time><a href="https://www.facebook.com/groups/abc/posts/2/">old</a></article>
-    <article><time datetime="2026-11-05T10:00:00Z"></time><a href="https://evil.example/groups/abc/posts/3/">external</a></article>
-    <article><time datetime="2026-11-05T10:00:00Z"></time><a href="https://www.facebook.com/groups/other/posts/4/">other</a></article>
-    <article><a href="https://www.facebook.com/groups/abc/posts/5/">no timestamp</a></article>`;
-  expect(findRecentGroupPosts(document, 'abc', Date.parse('2026-11-05T12:00:00Z'))).toEqual([
-    { url: 'https://www.facebook.com/groups/abc/posts/1/', postedAt: Date.parse('2026-11-05T10:00:00Z') },
-  ]);
-});
-
-it('reads the Vietnamese absolute date referenced by a Facebook post link', () => {
-  document.body.innerHTML = `<span><div aria-hidden="true" id="date">Thứ Năm, 5 Tháng 11, 2026 lúc 14:15</div><a aria-describedby="date" href="https://www.facebook.com/groups/abc/posts/123/?tracking=1">16 phút</a></span>
-    <span id="invalid">Thứ Năm, 35 Tháng 11, 2026 lúc 14:15</span><a aria-describedby="invalid" href="https://www.facebook.com/groups/abc/posts/124/">x</a>`;
-  expect(findRecentGroupPosts(document, 'abc', new Date(2026, 10, 5, 14, 31).getTime())).toEqual([
-    { url: 'https://www.facebook.com/groups/abc/posts/123/', postedAt: new Date(2026, 10, 5, 14, 15).getTime() },
-  ]);
-});
-
-it('reads relative post timestamps even when the tooltip is absent', () => {
-  document.body.innerHTML = `<a href="https://www.facebook.com/groups/abc/posts/123/">16 phút</a>
-    <span id="age">2 giờ trước</span><a aria-labelledby="age" href="https://www.facebook.com/groups/abc/posts/124/">x</a>
-    <a href="https://www.facebook.com/groups/abc/posts/125/">1 ngày</a>
-    <a href="https://www.facebook.com/groups/abc/posts/126/">25 giờ</a>`;
+describe('post time labels', () => {
   const now = new Date(2026, 10, 5, 14, 31).getTime();
-  expect(findRecentGroupPosts(document, 'abc', now)).toEqual([
-    { url: 'https://www.facebook.com/groups/abc/posts/123/', postedAt: now - 16 * 60_000 },
-    { url: 'https://www.facebook.com/groups/abc/posts/124/', postedAt: now - 2 * 3_600_000 },
-  ]);
+  const MIN = 60_000;
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+
+  it('reads relative labels in Vietnamese and English, with the rounding range', () => {
+    expect(parseAgeLabel('47 phút', now)).toEqual({ minAgeMs: 47 * MIN, maxAgeMs: 48 * MIN });
+    expect(parseAgeLabel('3 giờ trước', now)).toEqual({ minAgeMs: 3 * HOUR, maxAgeMs: 4 * HOUR });
+    expect(parseAgeLabel('5m', now)).toEqual({ minAgeMs: 5 * MIN, maxAgeMs: 6 * MIN });
+    expect(parseAgeLabel('2 hours ago', now)).toEqual({ minAgeMs: 2 * HOUR, maxAgeMs: 3 * HOUR });
+    expect(parseAgeLabel('1 ngày', now)).toEqual({ minAgeMs: DAY, maxAgeMs: 2 * DAY });
+    expect(parseAgeLabel('2 tuần', now)?.minAgeMs).toBe(14 * DAY);
+    expect(parseAgeLabel('Vừa xong', now)).toEqual({ minAgeMs: 0, maxAgeMs: MIN });
+  });
+
+  it('reads yesterday and absolute dates', () => {
+    expect(parseAgeLabel('Hôm qua lúc 20:31', now)).toEqual({ minAgeMs: 18 * HOUR, maxAgeMs: 18 * HOUR });
+    const yesterday = parseAgeLabel('Hôm qua', now)!;
+    expect(yesterday.minAgeMs).toBe(14 * HOUR + 31 * MIN);
+    expect(yesterday.maxAgeMs).toBe(DAY + 14 * HOUR + 31 * MIN);
+    expect(parseAgeLabel('Thứ Năm, 5 Tháng 11, 2026 lúc 14:15', now)).toEqual({ minAgeMs: 16 * MIN, maxAgeMs: 16 * MIN, absolute: true });
+    expect(parseAgeLabel('5 Tháng 11 lúc 14:15', now)?.minAgeMs).toBe(16 * MIN);
+    expect(parseFacebookDate('Thursday, November 5, 2026 at 2:15 PM', now)).toBe(new Date(2026, 10, 5, 14, 15).getTime());
+  });
+
+  it('reads "khoảng" / "about" labels and marks absolute dates', () => {
+    expect(parseAgeLabel('khoảng 1 phút trước', now)).toEqual({ minAgeMs: MIN, maxAgeMs: 2 * MIN });
+    expect(parseAgeLabel('about 3 hours ago', now)?.minAgeMs).toBe(3 * HOUR);
+    expect(parseAgeLabel('Thứ Năm, 5 Tháng 11, 2026 lúc 14:15', now)?.absolute).toBe(true);
+    expect(parseAgeLabel('47 phút', now)?.absolute).toBeUndefined();
+  });
+
+  it('rejects text that is not a time', () => {
+    expect(parseAgeLabel('Nguyễn Văn A', now)).toBeNull();
+    expect(parseAgeLabel('Facebook', now)).toBeNull();
+    expect(parseAgeLabel('Thứ Năm, 35 Tháng 11, 2026 lúc 14:15', now)).toBeNull();
+    expect(parseAgeLabel('', now)).toBeNull();
+  });
 });
 
-it('recognizes a single multi_permalinks post only when its timestamp is available', () => {
-  document.body.innerHTML = `<span id="age">16 phút trước</span>
-    <a aria-labelledby="age" href="https://www.facebook.com/groups/abc/?multi_permalinks=123&amp;other=1">nhiễu</a>
-    <a href="https://www.facebook.com/groups/abc/?multi_permalinks=456">nhiễu</a>
-    <a aria-labelledby="age" href="https://www.facebook.com/groups/abc/?multi_permalinks=123,456">nhiễu</a>`;
+describe('feed posts', () => {
   const now = new Date(2026, 10, 5, 14, 31).getTime();
-  expect(findRecentGroupPosts(document, 'abc', now)).toEqual([{ url: 'https://www.facebook.com/groups/abc/posts/123/', postedAt: now - 16 * 60_000 }]);
+  const ctx = (extra: Partial<FeedReadContext> = {}): FeedReadContext => ({ groupId: 'abc', now, myName: null, ownTexts: [], ...extra });
+  const item = (inner: string) => `<div role="feed"><div class="item">${inner}</div></div>`;
+  const first = () => findFeedItems(document)[0]!;
+  const editor = '<form><div role="textbox" contenteditable="true" aria-label="Bình luận dưới tên Trọng"></div></form>';
+  const header = (author: string, time = '') => `<h3><a href="/groups/abc/user/1/">${author}</a></h3>${time}`;
+
+  it('lists the direct children of the feed and tells placeholders apart', () => {
+    document.body.innerHTML = '<div role="feed"><div></div><div><div dir="auto">Bài</div></div></div>';
+    const items = findFeedItems(document);
+    expect(items).toHaveLength(2);
+    expect(isFeedItemRendered(items[0]!)).toBe(false);
+    expect(isFeedItemRendered(items[1]!)).toBe(true);
+  });
+
+  it('reads author, text, age and editor of a post without a link', () => {
+    document.body.innerHTML = item(`${header('Lan', '<span>47 phút</span>')}<div dir="auto">Cần mua laptop cũ</div>${editor}`);
+    const post = readFeedPost(first(), ctx());
+    expect(post.fingerprint).toBe(postFingerprint('Lan', 'Cần mua laptop cũ'));
+    expect(post.url).toBeNull();
+    expect(post.age).toMatchObject({ minAgeMs: 47 * 60_000, maxAgeMs: 48 * 60_000, label: "47 phút" });
+    expect(post.editor).not.toBeNull();
+    expect(post.mine).toBe(false);
+  });
+
+  it('reads the post link and its time from a tooltip', () => {
+    document.body.innerHTML = item(`${header('Lan')}<span id="tip">Thứ Năm, 5 Tháng 11, 2026 lúc 14:15</span><a aria-describedby="tip" href="https://www.facebook.com/groups/abc/posts/123/?__cft__=x">16 phút</a><div dir="auto">Nội dung</div>${editor}`);
+    const post = readFeedPost(first(), ctx());
+    expect(post.url).toBe('https://www.facebook.com/groups/abc/posts/123/');
+    expect(post.age?.minAgeMs).toBe(16 * 60_000);
+  });
+
+  it('prefers the relative label over a tooltip date rendered in another time zone (seen live)', () => {
+    // Live markup (2026-11-10): the first page load had the tooltip in US Pacific time, 15 hours off.
+    document.body.innerHTML = item(`${header('Lan')}<span id="rel">khoảng 1 phút trước</span><span id="abs">Thứ Tư, 4 Tháng 11, 2026 lúc 23:30</span>
+      <a role="link" aria-labelledby="rel" aria-describedby="abs" href="?__cft__[0]=x">1 phút</a><div dir="auto">Nội dung</div>${editor}`);
+    expect(readFeedPost(first(), ctx()).age).toMatchObject({ minAgeMs: 60_000, maxAgeMs: 120_000, label: 'khoảng 1 phút trước' });
+  });
+
+  it('uses structured times for a post with a known link', () => {
+    document.body.innerHTML = item(`${header('Lan')}<a href="https://www.facebook.com/groups/abc/posts/9/">x</a><div dir="auto">Nội dung</div>`);
+    const structured = new Map([['https://www.facebook.com/groups/abc/posts/9/', now - 5 * 60_000]]);
+    expect(readFeedPost(first(), ctx({ structured })).age).toMatchObject({ minAgeMs: 5 * 60_000, maxAgeMs: 5 * 60_000 });
+  });
+
+  it('ignores times, links and text that belong to comments', () => {
+    document.body.innerHTML = item(`${header('Lan')}<div dir="auto">Bài chính</div><div role="button" aria-label="Bình luận">Bình luận</div>
+      <div role="article" aria-label="Bình luận dưới tên Minh"><a href="/groups/abc/posts/5/?comment_id=1">2 phút</a><div dir="auto">Một bình luận dài hơn nội dung bài</div></div>`);
+    const post = readFeedPost(first(), ctx());
+    expect(post.age).toBeNull();
+    expect(post.url).toBeNull();
+    expect(post.fingerprint).toBe(postFingerprint('Lan', 'Bài chính'));
+  });
+
+  it('keeps the fingerprint when comments load or "Xem thêm" is pressed', () => {
+    document.body.innerHTML = item(`${header('Lan')}<div dir="auto">Bài dài … Xem thêm</div>${editor}`);
+    const before = readFeedPost(first(), ctx()).fingerprint;
+    document.body.innerHTML = item(`${header('Lan')}<div dir="auto">Bài dài</div><div role="article" aria-label="Bình luận dưới tên B"><div dir="auto">Bình luận rất rất rất dài, dài hơn bài viết nhiều</div></div>${editor}`);
+    expect(readFeedPost(first(), ctx()).fingerprint).toBe(before);
+  });
+
+  it('reads the story message and ignores the hidden filler Facebook adds to every post (seen live)', () => {
+    const post = (text: string) => item(`<div data-ad-rendering-role="profile_name"><a href="/groups/abc/user/1/"><b><span>Lê Trọng</span></b></a></div>
+      <blockquote><span dir="auto">${'<span>Facebook</span>'.repeat(5)}</span></blockquote><span dir="auto"><span>t</span><span>͏</span></span>
+      <div data-ad-rendering-role="story_message"><div dir="auto">${text}</div></div>${editor}`);
+    document.body.innerHTML = post('Test 12');
+    const a = readFeedPost(first(), ctx()).fingerprint;
+    document.body.innerHTML = post('Test 11');
+    const b = readFeedPost(first(), ctx()).fingerprint;
+    expect(a).toBe(postFingerprint('Lê Trọng', 'Test 12'));
+    expect(a).not.toBe(b);
+  });
+
+  it('skips filler text when there is no story message marker', () => {
+    document.body.innerHTML = item(`${header('Lan')}<blockquote><span dir="auto">Facebook Facebook</span></blockquote><span dir="auto">Facebook</span><div dir="auto">Bài thật</div>`);
+    expect(readFeedPost(first(), ctx()).fingerprint).toBe(postFingerprint('Lan', 'Bài thật'));
+  });
+
+  it('reads the author from the comment button label first, as earlier versions did', () => {
+    document.body.innerHTML = item(`<div dir="auto">Nội dung</div><div role="button" aria-label="Bình luận về bài viết của Em Anth, 1 bình luận">Bình luận</div>`);
+    expect(readFeedPost(first(), ctx()).fingerprint).toBe(postFingerprint('Em Anth', 'Nội dung'));
+  });
+
+  it('treats an unlabelled article inside the item as the post, not as a comment', () => {
+    document.body.innerHTML = item(`<div role="article">${header('Lan', '<span>3 giờ</span>')}<div dir="auto">Bài</div>${editor}<div role="article"><div dir="auto">bình luận</div></div></div>`);
+    const post = readFeedPost(first(), ctx());
+    expect(post.age?.minAgeMs).toBe(3 * 3_600_000);
+    expect(post.editor).not.toBeNull();
+  });
+
+  it('finds the comment button of a post without an editor, and not the send button of a form', () => {
+    document.body.innerHTML = item(`<div dir="auto">Bài</div><div role="button" aria-label="Thích"></div><div role="button">Bình luận</div>`);
+    expect(findItemCommentAction(first())?.textContent).toBe('Bình luận');
+    expect(findItemEditor(first())).toBeNull();
+    document.body.innerHTML = item(`<div dir="auto">Bài</div><form><div contenteditable="true"></div><div role="button" aria-label="Bình luận"></div></form>`);
+    expect(findItemCommentAction(first())).toBeNull();
+  });
+
+  it('ignores reply editors inside comments when finding the post editor', () => {
+    document.body.innerHTML = item(`<div dir="auto">Bài</div>${editor}<div role="article" aria-label="Bình luận dưới tên B"><div contenteditable="true"></div></div>`);
+    expect(findItemEditor(first())?.getAttribute('aria-label')).toBe('Bình luận dưới tên Trọng');
+  });
 });
 
-it('reads structured group stories with valid matching IDs and recent creation times', () => {
+describe('own comments', () => {
+  const comment = (who: string, text: string) => `<div role="article" aria-label="Bình luận dưới tên ${who}"><a href="/u">${who}</a><div dir="auto">${text}</div></div>`;
+
+  it('reads the user name from the comment editor label', () => {
+    document.body.innerHTML = '<div contenteditable="true" role="textbox" aria-label="Bình luận dưới tên Lê Hoàng Trọng"></div>';
+    expect(findMyName(document)).toBe('Lê Hoàng Trọng');
+    document.body.innerHTML = '<div contenteditable="true" aria-label="Comment as Jane Doe"></div>';
+    expect(findMyName(document)).toBe('Jane Doe');
+    document.body.innerHTML = '<div contenteditable="true" aria-label="Viết bình luận"></div>';
+    expect(findMyName(document)).toBeNull();
+  });
+
+  it('sees a comment by the user or with a campaign text', () => {
+    document.body.innerHTML = `<div id="a">${comment('Trọng', 'hay quá')}</div><div id="b">${comment('Minh', 'Liên hệ mình nhé')}</div><div id="c">${comment('Minh', 'khác')}</div>`;
+    const el = (id: string) => document.getElementById(id)!;
+    expect(hasMyComment(el('a'), 'Trọng', [])).toBe(true);
+    expect(hasMyComment(el('b'), 'Trọng', ['  liên hệ  mình nhé '])).toBe(true);
+    expect(hasMyComment(el('c'), 'Trọng', ['Liên hệ mình nhé'])).toBe(false);
+    expect(hasMyComment(el('c'), null, [])).toBe(false);
+  });
+});
+
+describe('post time behind a hover', () => {
+  it('offers header elements but not profile links or comment links', () => {
+    document.body.innerHTML = `<div role="feed"><div><h3><a href="/groups/abc/user/1/">Lan</a></h3><a href="https://www.facebook.com/lan.nguyen">Lan</a><span role="link" id="t">Facebook</span><a href="#" id="h">x</a>
+      <div dir="auto">Bài</div><form><div contenteditable="true"></div></form><a href="#" id="late">sau ô bình luận</a></div></div>`;
+    const ids = findTimestampTargets(findFeedItems(document)[0]!).map((el) => el.id);
+    expect(ids).toEqual(['t', 'h']);
+  });
+
+  it('sends pointer and mouse events over and out of one element', () => {
+    document.body.innerHTML = '<div id="outer"><span id="t">x</span></div>';
+    const seen: string[] = [];
+    for (const type of ['pointerover', 'mouseover', 'mouseout', 'pointerout']) document.getElementById('outer')!.addEventListener(type, (e) => seen.push(e.type));
+    const target = document.getElementById('t')!;
+    target.addEventListener('mouseenter', (e) => seen.push(e.type));
+    hoverOver(target);
+    hoverOut(target);
+    expect(seen).toEqual(['pointerover', 'mouseover', 'mouseenter', 'pointerout', 'mouseout']);
+  });
+});
+
+it('reads structured group stories with matching IDs', () => {
   const now = Date.parse('2026-11-05T08:43:00Z');
   const story = (id: string, time: number, group = '123') => ({ __typename: 'Story', post_id: id, creation_time: time / 1000, permalink_url: `https://www.facebook.com/groups/123/posts/${id}/`, to: { __typename: 'Group', id: group } });
   const script = document.createElement('script');
   script.type = 'application/json';
-  script.textContent = JSON.stringify({ nested: [story('1', now - 60_000), story('2', now - 90_000_000), story('3', now - 60_000, '999')] });
+  script.textContent = JSON.stringify({ nested: [story('1', now - 60_000), story('3', now - 60_000, '999')] });
   document.body.appendChild(script);
-  expect(findRecentGroupPosts(document, '123', now)).toEqual([{ url: 'https://www.facebook.com/groups/123/posts/1/', postedAt: now - 60_000 }]);
+  expect([...readStructuredPostTimes(document, '123')]).toEqual([['https://www.facebook.com/groups/123/posts/1/', now - 60_000]]);
 });
 
-it('associates a deferred timestamp link with one post link in the same container', () => {
-  document.body.innerHTML = `<section><span id="date">Thứ Năm, 5 Tháng 11, 2026 lúc 14:15</span><a aria-describedby="date" href="https://www.facebook.com/groups/abc/#?deferred">16 phút</a><a href="https://www.facebook.com/groups/abc/posts/123/?comment_id=99">comment</a></section>`;
-  const now = new Date(2026, 10, 5, 14, 31).getTime();
-  expect(findRecentGroupPosts(document, 'abc', now)).toEqual([{ url: 'https://www.facebook.com/groups/abc/posts/123/', postedAt: new Date(2026, 10, 5, 14, 15).getTime() }]);
-  document.querySelector('section')!.insertAdjacentHTML('beforeend', '<a href="https://www.facebook.com/groups/abc/posts/456/">other</a>');
-  expect(findRecentGroupPosts(document, 'abc', now)).toEqual([]);
+it('finds the single comment editor of the newest dialog', () => {
+  document.body.innerHTML = '<div role="dialog"><div contenteditable="true" aria-label="Viết bình luận"></div></div><div role="dialog"><div contenteditable="true" aria-label="Bình luận dưới tên A" id="x"></div></div>';
+  expect(findDialogCommentEditor(document)?.id).toBe('x');
 });
 
-it('finds an unambiguous editor and scopes its send button', () => {
-  document.body.innerHTML = '<article><div role="textbox" contenteditable="true" aria-label="Write a comment"></div><button aria-label="Post comment">Send</button></article>';
-  expect(findCommentButton(findCommentTextbox(document)!)).not.toBeNull();
-  document.body.innerHTML += '<form><div role="textbox" contenteditable="true" aria-label="Bình luận dưới tên A"></div></form>';
-  expect(findCommentTextbox(document)).toBeNull();
-});
-
-it('recognizes the saved Facebook comment editor without treating it as an identifiable post', () => {
-  document.body.innerHTML = '<form role="presentation"><div contenteditable="true" role="textbox" data-lexical-editor="true" aria-label="Bình luận dưới tên Trọng"><p><br></p></div></form>';
-  expect(countCommentEditors(document)).toBe(1);
-  expect(findRecentGroupPosts(document, '123', Date.now())).toEqual([]);
-  const textbox = findCommentTextbox(document)!;
+it('scopes the send button of a comment editor', () => {
+  document.body.innerHTML = '<form role="presentation"><div contenteditable="true" role="textbox" aria-label="Bình luận dưới tên Trọng"><p><br></p></div></form>';
+  const textbox = document.querySelector<HTMLElement>('[role="textbox"]')!;
   expect(findCommentButton(textbox)).toBeNull();
   document.body.insertAdjacentHTML('beforeend', '<button aria-label="Gửi"></button>');
   expect(findCommentButton(textbox)).toBeNull();
   textbox.closest('form')!.insertAdjacentHTML('beforeend', '<div role="button" aria-label="Đăng bình luận"></div>');
   expect(findCommentButton(textbox)?.getAttribute('aria-label')).toBe('Đăng bình luận');
+});
+
+it('presses Escape as keydown and keyup', () => {
+  document.body.innerHTML = '<div id="box"></div>';
+  const seen: string[] = [];
+  const box = document.getElementById('box')!;
+  for (const type of ['keydown', 'keyup']) box.addEventListener(type, (e) => seen.push(`${e.type}:${(e as KeyboardEvent).key}`));
+  pressEscape(box);
+  expect(seen).toEqual(['keydown:Escape', 'keyup:Escape']);
 });
 
 it('only counts visible matching comment text outside the editor', () => {
@@ -337,45 +481,6 @@ describe('fb-dom: duplicated or multi-line text checks', () => {
   });
 });
 
-describe('newest feed posts', () => {
-  const item = (author: string, body: string, editors = 1) =>
-    `<div><div dir="auto">${body}</div><div role="button" aria-label="Bình luận về bài viết của ${author}">Bình luận</div>` +
-    '<div role="textbox" contenteditable="true" aria-label="Viết bình luận"></div>'.repeat(editors) + '</div>';
-
-  it('finds feed items that have exactly one comment editor, in page order', () => {
-    document.body.innerHTML = `<div role="feed"><div></div>${item('Lan', 'Bài một')}${item('Minh', 'Bài hai')}</div>`;
-    const found = findNewestFeedPosts(document);
-    expect(found).toHaveLength(2);
-    expect(found[0]!.fingerprint).toBe(postFingerprint('Lan', 'Bài một'));
-    expect(found[1]!.fingerprint).toBe(postFingerprint('Minh', 'Bài hai'));
-  });
-
-  it('reads the author from the label even when it ends with a comment count', () => {
-    document.body.innerHTML = `<div role="feed">${item('Em Anth, 1 bình luận', 'Nội dung')}</div>`;
-    expect(findNewestFeedPosts(document)[0]!.fingerprint).toBe(postFingerprint('Em Anth', 'Nội dung'));
-  });
-
-  it('skips items without an editor, with several editors, or without a comment button', () => {
-    document.body.innerHTML = `<div role="feed">${item('A', 'x', 0)}${item('B', 'y', 2)}<div><div dir="auto">z</div><div contenteditable="true"></div></div></div>`;
-    expect(findNewestFeedPosts(document)).toEqual([]);
-  });
-
-  it('only looks at the first items of the feed', () => {
-    document.body.innerHTML = `<div role="feed">${'<div></div>'.repeat(8)}${item('Late', 'too far down')}</div>`;
-    expect(findNewestFeedPosts(document)).toEqual([]);
-  });
-
-  it('returns nothing when the page has no feed', () => {
-    document.body.innerHTML = item('Lan', 'x');
-    expect(findNewestFeedPosts(document)).toEqual([]);
-  });
-
-  it('gives different posts different fingerprints without containing the text', () => {
-    expect(postFingerprint('Lan', 'a')).not.toBe(postFingerprint('Lan', 'b'));
-    expect(postFingerprint('Lan', 'Cần mua laptop cũ')).toMatch(/^[0-9a-z]{1,8}$/);
-  });
-});
-
 it('finds the send button next to a feed editor and ignores the action-bar comment button', () => {
   document.body.innerHTML = '<div role="feed"><div role="article"><div role="button" aria-label="Bình luận"></div><div><div role="textbox" contenteditable="true" aria-label="Viết bình luận"></div><div role="button" aria-label="Bình luận" id="send"></div></div></div></div>';
   const textbox = document.querySelector<HTMLElement>('[role="textbox"]')!;
@@ -383,16 +488,16 @@ it('finds the send button next to a feed editor and ignores the action-bar comme
   expect(describeCommentButtons(textbox)).toContain('Bình luận');
 });
 
-it('explains why feed items were rejected', () => {
-  document.body.innerHTML = '<div role="feed"><div><div contenteditable="true"></div><div role="button" aria-label="Bình luận"></div><div dir="auto">Xin chào</div></div><div></div></div>';
-  expect(describeFeedItems(document)).toBe('#1: ô=1, nút bình luận=1, chữ=có; #2: ô=0, nút bình luận=0, chữ=không');
-});
-
 it('gives posts by one author different fingerprints even when the text has no leaf element', () => {
   const post = (text: string) => `<div><div role="button" aria-label="Bình luận về bài viết của Em Anth"></div><div contenteditable="true"></div><div dir="auto"><div>${text}</div></div></div>`;
   document.body.innerHTML = `<div role="feed">${post('Bài một')}${post('Bài hai')}</div>`;
-  const [a, b] = findNewestFeedPosts(document);
+  const [a, b] = findFeedItems(document).map((el) => readFeedPost(el, { groupId: 'g', now: Date.now(), myName: null, ownTexts: [] }));
   expect(a!.fingerprint).not.toBe(b!.fingerprint);
+});
+
+it('gives different posts different fingerprints without containing the text', () => {
+  expect(postFingerprint('Lan', 'a')).not.toBe(postFingerprint('Lan', 'b'));
+  expect(postFingerprint('Lan', 'Cần mua laptop cũ')).toMatch(/^[0-9a-z]{1,8}$/);
 });
 
 it('presses Enter as keydown, keypress and keyup', () => {
@@ -402,4 +507,38 @@ it('presses Enter as keydown, keypress and keyup', () => {
   for (const type of ['keydown', 'keypress', 'keyup']) box.addEventListener(type, (e) => seen.push(`${e.type}:${(e as KeyboardEvent).key}`));
   pressEnter(box);
   expect(seen).toEqual(['keydown:Enter', 'keypress:Enter', 'keyup:Enter']);
+});
+
+describe('joined groups page', () => {
+  // Shape measured live on facebook.com/groups/joins/ (2026-11-10): two sections, each with one heading.
+  const page = `<div role="navigation"><a href="/groups/feed/">Bảng feed</a><a href="/groups/navgroup/">Nhóm ở menu</a></div>
+    <div role="main"><div>
+      <div><div><h2>Yêu cầu tham gia nhóm đang chờ (1)</h2><a href="https://www.facebook.com/groups/pending1/">Nhóm chờ duyệt</a></div></div>
+      <div><div><h2>Tất cả các nhóm bạn đã tham gia (3)</h2>
+        <div><a href="https://www.facebook.com/groups/shopify/">Shopify Entrepreneurs</a><a href="https://www.facebook.com/groups/shopify/" aria-label="Xem nhóm">Xem nhóm</a></div>
+        <div><a href="https://www.facebook.com/groups/123456789/"><img alt=""></a><a href="https://www.facebook.com/groups/123456789/">Khởi nghiệp 2K</a></div>
+        <div><a href="https://www.facebook.com/groups/seo2018/">Xem nhóm</a><a href="https://www.facebook.com/groups/seo2018/posts/1/">bài</a><a href="https://evil.example/groups/x/">x</a></div>
+      </div></div>
+    </div></div>`;
+
+  it('finds only the joined section, not pending requests or navigation', () => {
+    document.body.innerHTML = page;
+    const section = findJoinedGroupsSection(document)!;
+    expect(readJoinedGroups(section)).toEqual([
+      { id: 'shopify', name: 'Shopify Entrepreneurs' },
+      { id: '123456789', name: 'Khởi nghiệp 2K' },
+      { id: 'seo2018', name: null },
+    ]);
+  });
+
+  it('reads the count from the heading', () => {
+    document.body.innerHTML = page;
+    expect(joinedGroupsCount(document)).toBe(3);
+  });
+
+  it('returns nothing when the heading is missing', () => {
+    document.body.innerHTML = '<div role="main"><h2>Nhóm khác</h2><a href="/groups/a/">A</a></div>';
+    expect(findJoinedGroupsSection(document)).toBeNull();
+    expect(joinedGroupsCount(document)).toBeNull();
+  });
 });

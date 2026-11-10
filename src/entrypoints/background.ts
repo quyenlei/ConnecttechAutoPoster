@@ -3,13 +3,14 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { validateImages, totalImageBytes } from '@/lib/images';
 import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
-import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type PostReply, type PostRequest, type RunCommand, type DiscoverRequest, type DiscoverReply, type CommentRequest, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
+import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
+import { historyKeysForGroup } from '@/lib/comment-pick';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, groupsItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
-import { hasPlaceholderName, newestPostsGroupUrl, recentActivityGroupUrl, withReadName } from '@/lib/groups';
+import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
 
 const ALARM = 'cap-next-post';
@@ -110,6 +111,7 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   const problem = validateCampaign(campaign, await campaignsItem.getValue());
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
+  await closeCommentWindow();
   await runItem.setValue(state);
   await log(campaign.id, null, 'info', campaign.mode === 'comment'
     ? `Đã bắt đầu chạy: tối đa ${state.total} lượt bình luận trên ${campaign.groupIds.length} nhóm.`
@@ -126,6 +128,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
     case 'cap/run/pause': {
       await runItem.setValue(pause(run));
       await schedule(null);
+      if (!stepping) await closeCommentWindow();
       return { ok: true };
     }
     case 'cap/run/resume': {
@@ -155,6 +158,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
     case 'cap/run/stop': {
       await runItem.setValue(stop(run));
       await schedule(null);
+      if (!stepping) await closeCommentWindow();
       return { ok: true };
     }
     case 'cap/run/fetch-names': {
@@ -163,9 +167,16 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       void fetchGroupNames(); // runs in the background; the UI watches storage
       return { ok: true };
     }
+    case 'cap/run/fetch-joined': {
+      if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
+      if (fetchingNames || fetchingJoined) return { ok: false, error: 'Đang đọc dữ liệu từ Facebook, hãy chờ xong.' };
+      void fetchJoinedGroups(); // runs in the background; the UI watches joinedScanItem
+      return { ok: true };
+    }
     case 'cap/run/reset': {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);
+      await closeCommentWindow();
       return { ok: true };
     }
   }
@@ -208,7 +219,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign.commentNewestPosts === true) : await postToGroup(group, text, campaign)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign) : await postToGroup(group, text, campaign)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -218,6 +229,7 @@ async function runStep(): Promise<void> {
     const latest = await runItem.getValue();
     if (latest.status !== 'running') {
       await log(campaign.id, logGroup, toStatus(outcome), describe(outcome, campaign.mode));
+      await closeCommentWindow();
       return;
     }
 
@@ -232,6 +244,7 @@ async function runStep(): Promise<void> {
     if (state.status === 'done') await log(campaign.id, null, 'info', 'Đã chạy xong.');
     if (state.status === 'halted' || state.status === 'paused') await log(campaign.id, null, 'info', state.reason ?? '');
     await runItem.setValue(state);
+    if (state.status !== 'running') await closeCommentWindow();
     if (state.status === 'halted') await disableAllSchedules(campaign.id);
     await schedule(state.status === 'running' ? state.nextAt : null);
     await notifyRunEnd(latest.status, state, campaign);
@@ -302,6 +315,34 @@ async function fetchGroupNames(): Promise<void> {
   }
 }
 
+let fetchingJoined = false;
+const JOINED_URL = 'https://www.facebook.com/groups/joins/?nav_source=tab';
+
+/**
+ * Opt-in, read-only: opens Facebook's "groups you joined" page as the active tab of the current window (the list
+ * loads only while scrolled in a rendered page), lets the content script read it, stores the result as a preview,
+ * closes the tab and shows the user's previous tab again. Nothing is added to the group list here; the user chooses in the UI.
+ */
+async function fetchJoinedGroups(): Promise<void> {
+  fetchingJoined = true;
+  let opened: { tabId: number; returnTabId?: number } | undefined;
+  await joinedScanItem.setValue({ status: 'running', at: Date.now(), groups: [] });
+  try {
+    opened = await openVisibleTab(JOINED_URL);
+    const { tabId } = opened;
+    await waitForTab(tabId, 'https://www.facebook.com/groups/joins');
+    const request: JoinedGroupsRequest = { type: 'cap/joined-groups' };
+    const reply = (await withTimeout(sendWithRetry(tabId, request), LIMITS.joinedScanTimeoutMs + 30_000, 'Hết thời gian đọc danh sách nhóm.')) as JoinedGroupsReply;
+    if (reply.problem) throw new Error(reply.problem.reason);
+    await joinedScanItem.setValue({ status: 'done', at: Date.now(), groups: reply.groups, ...(reply.expected !== undefined ? { expected: reply.expected } : {}) });
+  } catch (e) {
+    await joinedScanItem.setValue({ status: 'failed', at: Date.now(), groups: [], error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    if (opened) await closeVisibleTab(opened.tabId, opened.returnTabId);
+    fetchingJoined = false;
+  }
+}
+
 async function postToGroup(group: Group, template: string, campaign: Campaign): Promise<PostOutcome> {
   let tabId: number | undefined;
   // Until the page has loaded nothing can have been submitted, so a failure up to that point is safe to retry.
@@ -339,73 +380,118 @@ async function postToGroup(group: Group, template: string, campaign: Campaign): 
   }
 }
 
-async function commentInGroup(group: Group, text: string, run: RunState, newest: boolean): Promise<PostOutcome> {
-  let tabId: number | undefined;
+const onFeed = (url: string | undefined, groupId: string) =>
+  (url ?? '').startsWith(canonicalGroupUrl(groupId)) && !/\/(posts|permalink)\//.test(url ?? '');
+
+/**
+ * Opens a Facebook page as the active tab of the window the user is in (no new window). It must be the active,
+ * visible tab: Chrome stops rendering hidden tabs and Facebook then loads no further posts. The tab the user was
+ * on is returned so it can be shown again when CAP is done.
+ */
+async function openVisibleTab(url: string): Promise<{ tabId: number; windowId: number; returnTabId?: number }> {
+  const [current] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = await browser.tabs.create({ url, active: true, ...(current?.windowId !== undefined ? { windowId: current.windowId } : {}) });
+  if (tab.id === undefined || tab.windowId === undefined) throw new Error('Không mở được tab Facebook.');
+  return { tabId: tab.id, windowId: tab.windowId, ...(current?.id !== undefined ? { returnTabId: current.id } : {}) };
+}
+
+/** Closes a tab CAP opened and shows the tab the user was on before. Never throws. */
+async function closeVisibleTab(tabId: number, returnTabId?: number): Promise<void> {
+  await browser.tabs.remove(tabId).catch(() => undefined);
+  if (returnTabId !== undefined) await browser.tabs.update(returnTabId, { active: true }).catch(() => undefined);
+}
+
+/**
+ * Comment campaigns use one visible tab in the user's current window. It is reused for the next comment in the
+ * same group, so the feed is not loaded and scanned again, and moved to the next group by navigating it.
+ * If the user switched to another tab meanwhile, it is brought to the front again, since a hidden tab loads nothing.
+ */
+async function openGroupFeed(group: Group, run: RunState): Promise<number> {
+  const url = newestPostsGroupUrl(group.id);
+  const saved = await commentTabItem.getValue();
+  const tab = saved ? await browser.tabs.get(saved.tabId).catch(() => null) : null;
+  if (saved && tab && saved.runStartedAt === run.startedAt) {
+    if (saved.groupId === group.id && onFeed(tab.url, group.id)) {
+      if (!tab.active) await browser.tabs.update(saved.tabId, { active: true });
+      return saved.tabId;
+    }
+    await commentTabItem.setValue({ ...saved, groupId: group.id });
+    await browser.tabs.update(saved.tabId, { url, active: true });
+    await waitForTab(saved.tabId, canonicalGroupUrl(group.id));
+    return saved.tabId;
+  }
+  await closeCommentWindow();
+  const opened = await openVisibleTab(url);
+  await commentTabItem.setValue({ ...opened, groupId: group.id, runStartedAt: run.startedAt ?? 0 });
+  await waitForTab(opened.tabId, canonicalGroupUrl(group.id));
+  return opened.tabId;
+}
+
+/** Closes the comment tab, if one is open, and shows the user's previous tab again. Never throws. */
+async function closeCommentWindow(): Promise<void> {
+  const saved = await commentTabItem.getValue();
+  if (!saved) return;
+  await commentTabItem.setValue(null);
+  await closeVisibleTab(saved.tabId, saved.returnTabId);
+}
+
+/**
+ * One comment: scan the group feed for a usable post (in the page), reserve it, then comment on it.
+ * The post's keys and this run slot are saved before typing, so an uncertain submission is never retried.
+ */
+async function commentInGroup(group: Group, text: string, run: RunState, campaign: Campaign): Promise<PostOutcome> {
   try {
     const slot = `slot:${run.campaignId}:${run.startedAt}:${run.attempted}`;
     const history = Object.fromEntries(Object.entries(await commentedPostsItem.getValue()).filter(([key, at]) => !key.startsWith('slot:') || at > Date.now() - 7 * 86400_000));
     if (history[slot]) return { kind: 'skipped', reason: 'Lượt bình luận đã được xử lý trước khi gián đoạn.' };
-    const tab = await browser.tabs.create({ url: newest ? newestPostsGroupUrl(group.id) : recentActivityGroupUrl(group.id), active: false });
-    tabId = tab.id;
-    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.' };
-    await waitForTab(tabId);
-    if (newest) return await commentOnNewestPost(tabId, group.id, text, run, history, slot);
-    const request: DiscoverRequest = { type: 'cap/discover-posts', groupId: group.id };
-    const found = (await sendWithRetry(tabId, request)) as DiscoverReply;
-    if (found.problem) return found.problem;
-    const url = found.urls.find((candidate) => !history[candidate]);
-    if (!url) return { kind: 'skipped', skipRemainingGroup: true, reason: found.urls.length > 0
-      ? `Tìm thấy ${found.urls.length} bài trong 24 giờ, nhưng tất cả đã được thử trước đó.`
-      : `Không xác định được bài phù hợp trong 24 giờ. ${found.diagnostic ?? ''}`.trim() };
+    const tabId = await openGroupFeed(group, run);
+    if (hasPlaceholderName(group)) {
+      const found = await askGroupName(tabId);
+      if (found.fatal) return { kind: 'fatal', reason: found.fatal };
+      if (found.name) await saveGroupName(group.id, found.name);
+    }
+    const pickRequest: FeedPickRequest = {
+      type: 'cap/feed-pick',
+      groupId: group.id,
+      mode: campaign.commentNewestPosts ? 'newest' : 'recent',
+      tried: historyKeysForGroup(history, group.id),
+      ownTexts: campaign.variations.map((v) => v.trim()).filter(Boolean),
+    };
+    const pick = (await withTimeout(sendWithRetry(tabId, pickRequest), LIMITS.feedScanTimeoutMs + 30_000, 'Hết thời gian quét bài trong nhóm.')) as FeedPickReply;
+    if (pick.problem) return pick.problem;
+    if (!pick.fingerprint || !pick.keys?.length) {
+      return { kind: 'skipped', skipRemainingGroup: true, reason: pick.diagnostic ?? 'Không có bài phù hợp để bình luận.' };
+    }
     const latest = await runItem.getValue();
     if (latest.status !== 'running' || latest.startedAt !== run.startedAt || latest.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
-    // Reserve both the post and this run slot before opening the editor: uncertain outcomes are never retried automatically.
     const now = Date.now();
-    await commentedPostsItem.setValue({ ...history, [url]: now, [slot]: now });
-    await browser.tabs.update(tabId, { url });
-    await waitForTab(tabId);
-    await sendWithRetry(tabId, { type: 'cap/group-name' });
-    const beforeSubmit = await runItem.getValue();
-    if (beforeSubmit.status !== 'running' || beforeSubmit.startedAt !== run.startedAt || beforeSubmit.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
-    const comment: CommentRequest = { type: 'cap/comment', text };
-    return (await withTimeout(browser.tabs.sendMessage(tabId, comment), LIMITS.postTimeoutMs, 'Hết thời gian chờ bình luận.')) as PostOutcome;
+    await commentedPostsItem.setValue({ ...history, ...Object.fromEntries(pick.keys.map((key) => [key, now])), [slot]: now });
+    if (pick.diagnostic) await log(campaign.id, group, 'info', pick.diagnostic);
+    const comment: FeedCommentRequest = { type: 'cap/feed-comment', fingerprint: pick.fingerprint, text };
+    const outcome = (await withTimeout(browser.tabs.sendMessage(tabId, comment), LIMITS.postTimeoutMs, 'Hết thời gian chờ bình luận.')) as PostOutcome;
+    // `retryable` means nothing was typed or sent, so the post goes back to the pool instead of staying reserved.
+    if (outcome.kind === 'failed' && outcome.retryable) {
+      const released = new Set(pick.keys);
+      const current = await commentedPostsItem.getValue();
+      await commentedPostsItem.setValue(Object.fromEntries(Object.entries(current).filter(([key]) => !released.has(key))));
+    }
+    return outcome;
   } catch (e) {
     return { kind: 'failed', reason: e instanceof Error ? e.message : String(e) };
-  } finally {
-    if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
   }
 }
 
 /**
- * Opt-in "newest posts" mode: the age of a post is unknown, so only the first few posts of the feed
- * (sorted by newest) are used. The post is remembered by a fingerprint and reserved before typing.
+ * Resolves once the tab has finished loading. With `expected`, a tab that is still on another group page
+ * (just navigated, not yet committed) does not count; a redirect away from groups (login, checkpoint) does.
  */
-async function commentOnNewestPost(tabId: number, groupId: string, text: string, run: RunState, history: Record<string, number>, slot: string): Promise<PostOutcome> {
-  const prefix = `feed:${groupId}:`;
-  const skip = Object.keys(history).filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length));
-  const pickRequest: FeedPickRequest = { type: 'cap/feed-pick', skip };
-  const pick = (await sendWithRetry(tabId, pickRequest)) as FeedPickReply;
-  if (pick.problem) return pick.problem;
-  if (!pick.fingerprint) return { kind: 'skipped', skipRemainingGroup: true, reason: `Không có bài mới nào chưa thử trong feed. ${pick.diagnostic ?? ''}`.trim() };
-  const latest = await runItem.getValue();
-  if (latest.status !== 'running' || latest.startedAt !== run.startedAt || latest.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
-  const now = Date.now();
-  await commentedPostsItem.setValue({ ...history, [`${prefix}${pick.fingerprint}`]: now, [slot]: now });
-  const comment: FeedCommentRequest = { type: 'cap/feed-comment', text };
-  const outcome = (await withTimeout(browser.tabs.sendMessage(tabId, comment), LIMITS.postTimeoutMs, 'Hết thời gian chờ bình luận.')) as PostOutcome;
-  // `retryable` means nothing was sent, so the post goes back to the pool instead of staying reserved.
-  if (outcome.kind === 'failed' && outcome.retryable) {
-    const { [`${prefix}${pick.fingerprint}`]: _released, ...rest } = await commentedPostsItem.getValue();
-    await commentedPostsItem.setValue(rest);
-  }
-  return outcome;
-}
-
-function waitForTab(tabId: number): Promise<void> {
+function waitForTab(tabId: number, expected?: string): Promise<void> {
+  const ready = (t: { status?: string; url?: string; pendingUrl?: string }) =>
+    t.status === 'complete' && !t.pendingUrl && (!expected || (t.url ?? '').startsWith(expected) || !(t.url ?? '').includes('facebook.com/groups/'));
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => done(new Error('Trang nhóm tải quá lâu.')), LIMITS.tabLoadTimeoutMs);
-    const onUpdated = (id: number, info: { status?: string }) => {
-      if (id === tabId && info.status === 'complete') done();
+    const onUpdated = (id: number, _info: unknown, tab: { status?: string; url?: string; pendingUrl?: string }) => {
+      if (id === tabId && ready(tab)) done();
     };
     function done(err?: Error) {
       clearTimeout(timer);
@@ -413,12 +499,12 @@ function waitForTab(tabId: number): Promise<void> {
       err ? reject(err) : resolve();
     }
     browser.tabs.onUpdated.addListener(onUpdated);
-    browser.tabs.get(tabId).then((t) => t.status === 'complete' && done()).catch(() => done(new Error('Tab đã bị đóng.')));
+    browser.tabs.get(tabId).then((t) => ready(t) && done()).catch(() => done(new Error('Tab đã bị đóng.')));
   });
 }
 
 /** The content script may not be ready the instant the tab reports complete. */
-async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | DiscoverRequest | CommentRequest | FeedPickRequest): Promise<unknown> {
+async function sendWithRetry(tabId: number, msg: PostRequest | GroupNameRequest | FeedPickRequest | JoinedGroupsRequest): Promise<unknown> {
   let lastError: unknown;
   for (let i = 0; i < 8; i++) {
     try {

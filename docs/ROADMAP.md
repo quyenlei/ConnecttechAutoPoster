@@ -19,7 +19,8 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 - [x] Notifications (`notifications` permission, opt-in) when a run finishes, pauses or halts.
 
 ## Open problem: comment campaigns find too few posts
-- [ ] On live Facebook (one test group, 2026-11-09) only 1 of 8 recent posts could be identified, because Facebook does not put the post ID in the page until the pointer hovers the timestamp. Done: the log now says how many posts were seen versus identified (not yet checked live). Checked by the owner (2026-11-09): `m.facebook.com/groups/<id>` redirects to `facebook.com/groups/<id>`, so the mobile page is not an option. No hover faking.
+- [x] Scan rewrite (mock-tested only): visible comment window reused per group, feed walked post by post with scrolling, post time read from header labels or revealed by hovering the time label, already-commented posts recognised on the page, inline comments with the post's own "Bình luận" button. Live check on the owner's test group (2026-11-10): times read from tooltips, own comment recognised, one real comment landed on the chosen post. Full dashboard campaign on the owner's "Test 2" group (2026-11-10): 7/7 comments on 7 different posts, none twice. **Next:** a post whose time needs the hover; a post whose editor needs the "Bình luận" click; a real group with other members' posts.
+- [ ] (Background) On live Facebook (one test group, 2026-11-09) only 1 of 8 recent posts could be identified, because Facebook does not put the post ID in the page until the pointer hovers the timestamp. Done: the log now says how many posts were seen versus identified (not yet checked live). Checked by the owner (2026-11-09): `m.facebook.com/groups/<id>` redirects to `facebook.com/groups/<id>`, so the mobile page is not an option. Hovering the time label was later accepted by the owner (2026-11-10) as a functional step; random mouse movement stays out.
 - [x] Opt-in newest-posts mode: comment on up to 5 of the first feed posts without checking their age (mock-tested).
   - Live result from the owner (2026-11-09, two groups): in one group 1 comment was sent ("Đã gửi bình luận"); in the other, 0 of the first 8 feed items had a comment editor, so nothing was sent. **Not yet confirmed:** whether the sent comment landed on the right (newest) post, and whether `sorting_setting=CHRONOLOGICAL` works.
   - Console measurements (one group): feed items are plain `div` children of `[role="feed"]`; only the few items near the viewport had a comment editor; the others had no editor and no comment button yet; no link, no readable time (text inside the item is filler such as "Facebook").
@@ -32,6 +33,7 @@ Groups, campaigns, safe run engine, activity log, CSV, tests, docs.
 
 ## v0.4 data
 - [x] Backup and restore (JSON export/import with preview; never includes Facebook data). Tested with unit tests and the local mock only.
+- [x] Import the joined groups from Facebook (opt-in, preview, user picks). Checked live once: 144/144.
 - [ ] Group tags/folders and saved group lists.
 - [x] Scheduled campaigns: fixed daily times (v0.2.0). Weekday or one-off dates are not planned yet.
 

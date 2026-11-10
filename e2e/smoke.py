@@ -8,23 +8,70 @@ from playwright.sync_api import sync_playwright
 MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
 <div role="button" id="open">Write something...</div>
 <script>
+// "Groups you joined" page: pending requests first, then the joined list, which grows when scrolled to the end.
+if (location.pathname.startsWith('/groups/joins')) {
+  document.title = 'Facebook';
+  document.body.innerHTML = '<div role="navigation"><a href="/groups/feed/">Bảng feed</a></div><div role="main"><div>' +
+    '<div><div><h2>Yêu cầu tham gia nhóm đang chờ (1)</h2><a href="/groups/mockpendingx/">Pending X</a></div></div>' +
+    '<div><div><h2>Tất cả các nhóm bạn đã tham gia (3)</h2><div id="joined"></div></div></div></div></div>';
+  const list = document.getElementById('joined');
+  const row = (slug, name) => { const d = document.createElement('div'); d.style.minHeight = '700px';
+    d.innerHTML = '<a href="/groups/' + slug + '/">' + name + '</a><a href="/groups/' + slug + '/" aria-label="Xem nhóm">Xem nhóm</a>'; list.appendChild(d); };
+  const later = [['mockjoined1', 'Nhóm A'], ['mockjoined2', 'Nhóm B']];
+  row('mock1', 'Mock One trên Facebook');
+  let loading = false;
+  addEventListener('scroll', () => {
+    if (loading || !later.length || scrollY + innerHeight < document.documentElement.scrollHeight - 200) return;
+    loading = true; setTimeout(() => { row(...later.shift()); loading = false; }, 500);
+  });
+} else {
 setTimeout(()=>{
-  if (location.pathname.split('/')[2] === 'mockempty') return; // a group with no recent post
-  const article=document.createElement('article'); article.setAttribute('role', 'article');
-  const feedOnly = location.pathname.split('/')[2] === 'mockfeed'; // newest-posts mode: a feed with no post link, time or article role
-  let host = article;
-  if (feedOnly) {
-    host = document.createElement('div');
-    host.innerHTML='<div dir="auto">Bài không có liên kết</div><div role="button" aria-label="Bình luận về bài viết của Lan, 1 bình luận">Bình luận</div><form><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button type="button" aria-label="Post comment" id="send-comment">Gửi</button></form>';
-    const feed = document.createElement('div'); feed.setAttribute('role', 'feed'); feed.appendChild(document.createElement('div')); feed.appendChild(host);
-    document.body.appendChild(feed);
-  } else {
-    article.innerHTML='<time id="published"></time><a id="post-link">Bài viết</a><div role="textbox" contenteditable="true" aria-label="Write a comment" id="comment"></div><button aria-label="Post comment" id="send-comment">Gửi</button>';
-    document.body.appendChild(article);
-    document.getElementById('published').setAttribute('datetime', new Date().toISOString());
-    document.getElementById('post-link').href = '/groups/' + location.pathname.split('/')[2] + '/posts/123/';
-  }
-  document.getElementById('send-comment').onclick=()=>{ const el=document.getElementById('comment'); fetch('/__comment?t='+encodeURIComponent(el.textContent)); const result=document.createElement('div'); result.dir='auto'; result.textContent=el.textContent; host.appendChild(result); el.textContent=''; };
+  // Group feed, like Facebook's: items are plain children of [role=feed]; each has its own comment form.
+  const slug = location.pathname.split('/')[2];
+  const feed = document.createElement('div'); feed.setAttribute('role', 'feed'); document.body.appendChild(feed);
+  const header = p => '<h3><a href="/groups/' + slug + '/user/1/">' + p.author + '</a></h3>' +
+    (p.hoverTime ? '<span role="link" class="ts">Facebook</span>' : p.age ? (p.link ? '<a href="/groups/' + slug + '/posts/' + p.link + '/">' + p.age + '</a>' : '<span>' + p.age + '</span>') : '');
+  const fill = (el, p) => {
+    el.innerHTML = header(p) + '<div dir="auto">' + p.body + '</div><div role="button" aria-label="Bình luận về bài viết của ' + p.author + '">Bình luận</div>' +
+      (p.mine ? '<div role="article" aria-label="Bình luận dưới tên Tôi"><a href="/u">Tôi</a><div dir="auto">hay quá</div></div>' : '') +
+      '<form><div role="textbox" contenteditable="true" aria-label="Bình luận dưới tên Tôi"></div><button type="button" aria-label="Post comment">Gửi</button></form>';
+    const ts = el.querySelector('.ts');
+    // The post time and link appear only while the pointer is over the time label.
+    if (ts) ts.addEventListener('mouseover', () => { ts.outerHTML = '<a href="/groups/' + slug + '/posts/' + p.link + '/">' + p.hoverTime + '</a>'; });
+    el.querySelector('button[aria-label="Post comment"]').onclick = () => {
+      const box = el.querySelector('[contenteditable]'); const text = box.textContent;
+      fetch('/__comment?t=' + encodeURIComponent(text) + '&a=' + encodeURIComponent(p.author));
+      const result = document.createElement('div'); result.dir = 'auto'; result.textContent = text; el.appendChild(result); box.textContent = '';
+    };
+  };
+  const add = p => {
+    const el = document.createElement('div'); el.style.minHeight = (slug === 'mockscroll' ? 900 : 100) + 'px'; feed.appendChild(el);
+    if (!p.lazy) return fill(el, p);
+    // Placeholder until it is near the viewport, like Facebook's virtualised feed.
+    const check = () => { const r = el.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0 && !el.children.length) fill(el, p); };
+    addEventListener('scroll', check); check();
+  };
+  const sets = {
+    mockempty: [{ author: 'Cũ', body: 'Bài cũ', age: '3 ngày', link: 9 }],
+    mockfeed: [{ author: 'Lan', body: 'Bài không có liên kết' }],
+    mockscroll: [
+      { author: 'An', body: 'Bài đã bình luận', age: '2 phút', mine: true },
+      { author: 'Bình', body: 'Bài thứ hai', age: '10 phút', lazy: true },
+    ],
+  };
+  // Loaded only when the page is scrolled to the end, one at a time (infinite scroll).
+  const later = slug === 'mockscroll' ? [
+    { author: 'Chi', body: 'Bài thứ ba', hoverTime: '40 phút', link: 777 },
+    { author: 'Dũng', body: 'Bài cũ một', age: '2 ngày' },
+    { author: 'Em', body: 'Bài cũ hai', age: '3 ngày' },
+    { author: 'Giang', body: 'Bài cũ ba', age: '4 ngày' },
+  ] : [];
+  (sets[slug] || [{ author: 'Lan', body: 'Bài viết', age: '5 phút', link: 123 }]).forEach(add);
+  let loading = false;
+  addEventListener('scroll', () => {
+    if (loading || !later.length || scrollY + innerHeight < document.documentElement.scrollHeight - 200) return;
+    loading = true; setTimeout(() => { add(later.shift()); loading = false; }, 500);
+  });
 }, 2000);
 document.getElementById('open').onclick=()=>{
   const d=document.createElement('div'); d.setAttribute('role','dialog');
@@ -54,6 +101,7 @@ document.getElementById('open').onclick=()=>{
     fetch('/__posted?t='+encodeURIComponent(tb.textContent)+'&n='+d.querySelectorAll('img').length+'&p='+(d.querySelector('#rmprev')?1:0)+'&names='+encodeURIComponent(names)+'&i='+encodeURIComponent(tb.innerHTML.replace(/<div><br><\\/div>/g,'\\n').replace(/<div>/g,'\\n').replace(/<\\/div>/g,'').replace(/<br>/g,'\\n'))); d.remove();
     if (location.pathname.split('/')[2] === 'mockpending') { const n=document.createElement('div'); n.textContent='Your post is pending approval.'; document.body.appendChild(n); } };
 };
+}
 </script></body></html>"""
 
 ext, exe, prof = [os.path.realpath(a) for a in sys.argv[1:4]]
@@ -61,6 +109,8 @@ eid = ''.join(chr(97 + int(c, 16)) for c in hashlib.sha256(ext.encode()).hexdige
 posted = []
 posted_meta = []  # per post: number of images, whether the preview card was still open, image names
 comments = []
+comment_authors = []
+page_loads = []
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -70,9 +120,11 @@ class H(http.server.BaseHTTPRequestHandler):
             posted_meta.append({'n': int(q.get('n', ['0'])[0]), 'p': int(q.get('p', ['0'])[0]), 'names': q.get('names', [''])[0], 'i': q.get('i', [''])[0]})
             body, ctype = b'ok', 'text/plain'
         elif self.path.startswith('/__comment'):
-            comments.append(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)['t'][0])
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            comments.append(q['t'][0]); comment_authors.append(q.get('a', [''])[0])
             body, ctype = b'ok', 'text/plain'
         else:
+            page_loads.append(urllib.parse.urlparse(self.path).path)
             body, ctype = MOCK.encode(), 'text/html; charset=utf-8'
         self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
@@ -85,7 +137,8 @@ srv.socket = sslctx.wrap_socket(srv.socket, server_side=True)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 with sync_playwright() as p:
-    ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=False,
+    # Headless by default (new headless mode loads extensions and renders pages); E2E_HEADED=1 shows the browser.
+    ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=os.environ.get('E2E_HEADED') != '1',
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
               "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
@@ -159,14 +212,15 @@ with sync_playwright() as p:
     assert comments == ['Bình luận thử'], comments
     assert not errors
 
-    def run_comment_campaign(name, group_label, newest=False):
+    def run_comment_campaign(name, group_label, newest=False, limit=1, text='Bình luận thử'):
         pg.click("button:has-text('Chiến dịch')")
         pg.click("button:has-text('Tạo mới')")
         pg.fill('#c-name', name)
         pg.select_option('#c-mode', 'comment')
-        pg.fill('#c-comment-limit', '1')
-        pg.fill('#c-var-0', 'Bình luận thử')
+        pg.fill('#c-comment-limit', str(limit))
+        pg.fill('#c-var-0', text)
         pg.check(f"label:has-text('{group_label}') input")
+        pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
         if newest: pg.check('text=Bình luận các bài mới nhất')
         pg.click("button:has-text('Lưu và chạy')")
         pg.wait_for_selector('text=Đã bắt đầu chiến dịch bình luận.')
@@ -181,7 +235,7 @@ with sync_playwright() as p:
 
     # Re-running against the same group must not comment on the same post twice.
     run_comment_campaign('Smoke bình luận lặp', 'Mock One')
-    wait_for_log('tất cả đã được thử trước đó')
+    wait_for_log('1 đã thử trước đó')
     assert comments == ['Bình luận thử'], f"post was commented twice: {comments}"
 
     # A group with no recent post is skipped with a reason, and nothing is sent.
@@ -189,7 +243,7 @@ with sync_playwright() as p:
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockempty | Mock Empty')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Empty')")
     run_comment_campaign('Smoke bình luận trống', 'Mock Empty')
-    wait_for_log('Không xác định được bài phù hợp trong 24 giờ')
+    wait_for_log('1 cũ hơn 24 giờ')
     assert comments == ['Bình luận thử'], f"comment sent without an eligible post: {comments}"
     assert not errors
 
@@ -202,8 +256,24 @@ with sync_playwright() as p:
     while len(comments) < 2 and time.time() < deadline: time.sleep(1)
     assert comments == ['Bình luận thử', 'Bình luận thử'], f"feed post was not commented: {comments}"
     run_comment_campaign('Smoke bình luận feed lặp', 'Mock Feed', newest=True)
-    wait_for_log('Không có bài mới nào chưa thử trong feed')
+    wait_for_log('Đã xem 1 bài: 1 đã thử trước đó')
     assert len(comments) == 2, f"feed post was commented twice: {comments}"
+    assert not errors
+
+    # Infinite feed: the first post already has the user's comment, the second renders only near the viewport,
+    # the third loads after scrolling to the end and shows its time only under the pointer, then old posts follow.
+    # Two comments go to the second and third post, in one window that loads the group once.
+    pg.click("button:text-is('Nhóm')")
+    pg.fill('#group-list', 'https://www.facebook.com/groups/mockscroll | Mock Scroll')
+    pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Scroll')")
+    loads_before = page_loads.count('/groups/mockscroll/')
+    run_comment_campaign('Smoke bình luận cuộn', 'Mock Scroll', limit=2, text='Bình luận cuộn')
+    deadline = time.time() + 150
+    while comments.count('Bình luận cuộn') < 2 and time.time() < deadline: time.sleep(1)
+    print('scroll comments:', comment_authors[-2:], '| loads:', page_loads.count('/groups/mockscroll/') - loads_before)
+    assert comment_authors[-2:] == ['Bình', 'Chi'], f"wrong posts commented: {comment_authors}"
+    pg.wait_for_selector('.badge--done', timeout=60000)
+    assert page_loads.count('/groups/mockscroll/') - loads_before == 1, f"group feed was loaded {page_loads.count('/groups/mockscroll/') - loads_before} times"
     assert not errors
 
     # A group where admins approve posts: the post is logged as pending, not as posted.
@@ -341,11 +411,29 @@ with sync_playwright() as p:
     assert posted_meta[-1]['i'].strip() == short_post, posted_meta[-1]['i']
     assert not errors
 
+    # Joined groups: the list is read from the mock "groups you joined" page (scrolled to load all), pending
+    # requests are left out, the group already listed is marked, and only the ticked group is added.
+    pg.click("button:text-is('Nhóm')")
+    pg.click("button:has-text('Lấy danh sách nhóm đã tham gia')")
+    pg.wait_for_selector('text=Tìm thấy 3 nhóm', timeout=90000)
+    assert pg.locator('text=2 nhóm chưa có trong danh sách').count() == 1, 'joined preview count'
+    assert pg.locator("td:text-is('Pending X')").count() == 0, 'a pending join request was listed'
+    pg.check("input[aria-label='Chọn Nhóm B']")
+    pg.click("button:has-text('Thêm 1 nhóm đã chọn')")
+    pg.wait_for_selector('text=Đã thêm 1 nhóm.')
+    assert pg.locator("td:text-is('Nhóm B')").count() == 2, 'Nhóm B should be in the preview and in the group list'
+    assert pg.locator("td:text-is('Nhóm A')").count() == 1, 'Nhóm A was added without being ticked'
+    assert not errors
+
     # Overview: today's numbers are filled in and the notification option can be switched on.
     pg.click("button:text-is('Tổng quan')")
     pg.wait_for_selector('text=Tỉ lệ thành công')
     assert pg.locator('.overview__stat-value').first.inner_text() != '0', "today's sent count should not be 0"
-    pg.check("label:has-text('Thông báo trên máy') input")
+    # The checkbox is controlled by stored settings: it re-renders shortly after the storage write, so wait for that.
+    box = "label:has-text('Thông báo trên máy') input"
+    pg.click(box)
+    pg.wait_for_function("() => chrome.storage.local.get('settings').then(d => d.settings && d.settings.notifyOnFinish === true)", timeout=10000)
+    pg.wait_for_selector(box + ':checked', timeout=10000)
     assert not errors
     # Backup: export, wipe the local data, import the file, and check the counts. Schedules come back switched off.
     keys = "['groups','campaigns','logs']"

@@ -1,7 +1,7 @@
 # Development
 
 ## Requirements
-Node 22+, pnpm, and (for the smoke test) Python 3 with `playwright` plus `chromium-browser`. Branded Google Chrome 137+ ignores `--load-extension`, so automated tests need Chromium or Chrome for Testing.
+Node 22+, pnpm, and (for the smoke test) Python 3 with `playwright` plus `chromium-browser`. Branded Google Chrome 137+ ignores `--load-extension`, so automated tests need Chromium or Chrome for Testing (`python3 -m playwright install chromium` provides it). The smoke test runs headless by default; `E2E_HEADED=1` shows the browser.
 
 ## Setup
 ```bash
