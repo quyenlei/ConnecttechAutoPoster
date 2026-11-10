@@ -3,6 +3,7 @@ import { addJoinedGroups, filterGroups, hasPlaceholderName, parseGroupList, prev
 import { LIMITS } from '@/lib/limits';
 import { campaignsItem, groupsItem, joinedScanItem } from '@/lib/storage';
 import type { Group } from '@/lib/types';
+import { useConfirm } from '../confirm';
 import { sendCommand, useItem } from '../hooks';
 
 /** A scan still marked running long after its time limit was interrupted (browser or worker restart). */
@@ -14,6 +15,7 @@ function JoinedGroups({ groups }: { groups: Group[] }) {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState<{ text: string; danger: boolean } | null>(null);
+  const confirm = useConfirm();
   const running = scan?.status === 'running' && Date.now() - scan.at < STALE_SCAN_MS;
   const rows = useMemo(() => (scan?.status === 'done' ? previewJoinedGroups(groups, scan.groups) : []), [scan, groups]);
   const fresh = rows.filter((r) => !r.exists);
@@ -23,7 +25,7 @@ function JoinedGroups({ groups }: { groups: Group[] }) {
   }, [rows, query]);
 
   async function start() {
-    if (!window.confirm('CAP sẽ mở trang "Nhóm bạn đã tham gia" của Facebook thành một tab trong cửa sổ này, cuộn để đọc danh sách, rồi đóng tab và quay lại đây. Không vào nhóm nào và không bấm gì. Tiếp tục?')) return;
+    if (!(await confirm('CAP sẽ mở trang "Nhóm bạn đã tham gia" của Facebook thành một tab trong cửa sổ này, cuộn để đọc danh sách, rồi đóng tab và quay lại đây. Không vào nhóm nào và không bấm gì. Tiếp tục?', { okLabel: 'Lấy danh sách' }))) return;
     setChosen(new Set());
     const reply = await sendCommand({ type: 'cap/run/fetch-joined' });
     setMessage(reply.ok ? null : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
@@ -112,6 +114,7 @@ export function GroupsView() {
   const [text, setText] = useState('');
   const [rejected, setRejected] = useState<string[]>([]);
   const [nameMessage, setNameMessage] = useState<{ text: string; danger: boolean } | null>(null);
+  const confirm = useConfirm();
   const unnamed = groups.filter(hasPlaceholderName).length;
 
   async function fetchNames() {
@@ -131,7 +134,7 @@ export function GroupsView() {
   }
 
   async function remove(id: string, name: string) {
-    if (!window.confirm(`Xóa nhóm “${name}”? Nhóm cũng sẽ bị gỡ khỏi mọi chiến dịch.`)) return;
+    if (!(await confirm(`Xóa nhóm “${name}”? Nhóm cũng sẽ bị gỡ khỏi mọi chiến dịch.`, { okLabel: 'Xóa', danger: true }))) return;
     await groupsItem.setValue(groups.filter((g) => g.id !== id));
     const campaigns = await campaignsItem.getValue();
     await campaignsItem.setValue(campaigns.map((c) => ({ ...c, groupIds: c.groupIds.filter((g) => g !== id) })));

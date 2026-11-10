@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { delayWarning, formatDuration, recommendDelay } from '@/lib/delay';
+import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, recommendDelay } from '@/lib/delay';
+import { withDefaultCampaigns } from '@/lib/defaults';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
-import { DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
+import { DEFAULT_GROUP_BREAK, DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits';
 import { isActive } from '@/lib/run-engine';
 import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/schedule';
 import { hasUnknownPlaceholder } from '@/lib/template';
 import { campaignsItem, groupsItem, runItem } from '@/lib/storage';
 import type { Campaign } from '@/lib/types';
+import { useConfirm } from '../confirm';
+import { RUN_STATUS_LABEL } from '../labels';
 import { sendCommand, useItem } from '../hooks';
 import { prepareImage } from '../image-file';
 
@@ -46,6 +49,7 @@ export function CampaignsView() {
   const [draft, setDraft] = useState<Campaign | null>(null);
   const [groupQuery, setGroupQuery] = useState('');
   const [message, setMessage] = useState<{ text: string; danger: boolean } | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!draft && campaigns[0]) setDraft(campaigns[0]);
@@ -59,13 +63,28 @@ export function CampaignsView() {
   }, [campaigns, draft]);
   const saved = draft ? campaigns.some((c) => c.id === draft.id) : false;
   const busy = run ? isActive(run) : false;
-  const warning = draft ? delayWarning(draft.delay, draft.groupIds.length) : null;
+  const warning = draft ? delayWarning(draft.delay, draft.groupIds.length, draft.mode) : null;
+  const groupBreak = draft?.groupBreak ?? DEFAULT_GROUP_BREAK;
   const totalSec = useMemo(() => {
     if (!draft) return 0;
-    const attempts = draft.groupIds.length * (draft.mode === 'comment' ? (draft.commentsPerGroup ?? 0) : 1);
-    if (attempts < 2) return 0;
-    return ((draft.delay.minSec + draft.delay.maxSec) / 2) * (attempts - 1);
+    const average = (r: { minSec: number; maxSec: number }) => (r.minSec + r.maxSec) / 2;
+    if (draft.mode !== 'comment') return draft.groupIds.length < 2 ? 0 : average(draft.delay) * (draft.groupIds.length - 1);
+    const groupCount = draft.groupIds.length;
+    const perGroup = draft.commentsPerGroup ?? 0;
+    if (groupCount * perGroup < 2) return 0;
+    // Waits only: a short one between comments of a group, a longer one between groups.
+    return average(draft.delay) * groupCount * Math.max(0, perGroup - 1) + average(draft.groupBreak ?? DEFAULT_GROUP_BREAK) * (groupCount - 1);
   }, [draft]);
+
+  /** Each kind of campaign starts from its own timing defaults. */
+  function changeMode(mode: 'post' | 'comment') {
+    if (!draft || (draft.mode ?? 'post') === mode) return;
+    if (mode === 'comment') {
+      patch({ mode, delay: recommendDelay(draft.groupIds.length, 'comment'), groupBreak: { ...DEFAULT_GROUP_BREAK }, safetyBreak: { ...draft.safetyBreak, enabled: false } });
+    } else {
+      patch({ mode, delay: recommendDelay(draft.groupIds.length || 10), safetyBreak: { ...DEFAULT_SAFETY_BREAK } });
+    }
+  }
 
   const schedule = draft?.schedule ?? DEFAULT_SCHEDULE;
   const scheduleTimes = normalizeTimes(schedule.times);
@@ -77,8 +96,8 @@ export function CampaignsView() {
   const otherImageBytes = draft ? campaigns.filter((c) => c.id !== draft.id).reduce((sum, c) => sum + totalImageBytes(c.images ?? []), 0) : 0;
   const variationCount = draft ? draft.variations.filter((v) => v.trim()).length : 0;
 
-  function select(next: Campaign) {
-    if (dirty && !window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?')) return;
+  async function select(next: Campaign) {
+    if (dirty && !(await confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?', { okLabel: 'Bỏ thay đổi', danger: true }))) return;
     setDraft(next);
     setGroupQuery('');
     setMessage(null);
@@ -128,6 +147,19 @@ export function CampaignsView() {
     setMessage(errors.length > 0 ? { text: errors.join(' '), danger: true } : null);
   }
 
+  /** Adds the two ready-made campaigns (fast comments, posting) on every saved group, unless they exist already. */
+  async function addDefaults() {
+    const result = withDefaultCampaigns(await campaignsItem.getValue(), await groupsItem.getValue(), Date.now());
+    if (result.added === 0) {
+      setMessage({ text: 'Hai chiến dịch mặc định đã có sẵn trong danh sách.', danger: false });
+      return;
+    }
+    await campaignsItem.setValue(result.campaigns);
+    const first = result.campaigns[result.campaigns.length - result.added];
+    if (first) await select(first); // asks first when the open campaign has unsaved changes
+    setMessage({ text: `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm. Hãy viết nội dung rồi lưu trước khi chạy.`, danger: false });
+  }
+
   async function save(): Promise<Campaign | null> {
     if (!draft) return null;
     if (busy && run?.campaignId === draft.id) {
@@ -151,19 +183,17 @@ export function CampaignsView() {
       setMessage({ text: imageProblem, danger: true });
       return null;
     }
-    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, ...base } = draft;
+    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, groupBreak: _groupBreak, ...base } = draft;
     const clean: Campaign = {
       ...base,
       // Images and the link preview option only apply to post campaigns.
       ...(isPost && images.length > 0 ? { images } : {}),
       ...(isPost && draft.removeLinkPreview ? { removeLinkPreview: true } : {}),
       ...(!isPost && draft.commentNewestPosts ? { commentNewestPosts: true } : {}),
+      ...(!isPost ? { groupBreak: clampGroupBreak(draft.groupBreak) } : {}),
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
       variations: draft.variations.filter((v) => v.trim()).length ? draft.variations.filter((v) => v.trim()) : [''],
-      delay: {
-        minSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec),
-        maxSec: Math.max(LIMITS.minDelaySec, draft.delay.minSec, draft.delay.maxSec),
-      },
+      delay: clampDelay(draft.delay, draft.mode),
       safetyBreak: {
         ...draft.safetyBreak,
         everyPosts: Math.min(LIMITS.maxSafetyBreakEvery, Math.max(1, draft.safetyBreak.everyPosts)),
@@ -180,7 +210,7 @@ export function CampaignsView() {
 
   async function launch() {
     if (!draft) return;
-    if (!window.confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`)) return;
+    if (!(await confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`, { okLabel: 'Bắt đầu chạy' }))) return;
     const c = await save();
     if (!c) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: c.id });
@@ -188,7 +218,7 @@ export function CampaignsView() {
   }
 
   async function remove(id: string, name: string) {
-    if (!window.confirm(`Xóa chiến dịch “${name}”? Thao tác này không thể hoàn tác.`)) return;
+    if (!(await confirm(`Xóa chiến dịch “${name}”? Thao tác này không thể hoàn tác.`, { okLabel: 'Xóa', danger: true }))) return;
     await campaignsItem.setValue(campaigns.filter((c) => c.id !== id));
     setDraft(null);
   }
@@ -198,13 +228,16 @@ export function CampaignsView() {
       <section className="card campaigns__sidebar" aria-label="Chiến dịch đã lưu">
         <div className="card__head">
           <h2>Chiến dịch</h2>
-          <button className="button button--small" type="button" onClick={() => select(blank())}>Tạo mới</button>
+          <div className="runbar__actions">
+            <button className="button button--small" type="button" onClick={() => void addDefaults()}>Tạo chiến dịch mặc định</button>
+            <button className="button button--small" type="button" onClick={() => void select(blank())}>Tạo mới</button>
+          </div>
         </div>
         {campaigns.length === 0 && <p className="u-muted">Chưa có chiến dịch nào được lưu.</p>}
         <ul>
           {campaigns.map((c) => (
             <li key={c.id} className="campaigns__list-item">
-              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => select(c)}>
+              <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => void select(c)}>
                 {c.name}
               </button>
               <button className="button button--small button--danger" type="button" onClick={() => remove(c.id, c.name)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
@@ -225,7 +258,7 @@ export function CampaignsView() {
 
             <div className="field">
               <label className="field__label" htmlFor="c-mode">Loại chiến dịch</label>
-              <select id="c-mode" className="field__control" value={draft.mode ?? 'post'} onChange={(e) => patch({ mode: e.target.value === 'comment' ? 'comment' : 'post' })} disabled={busy && run?.campaignId === draft.id}>
+              <select id="c-mode" className="field__control" value={draft.mode ?? 'post'} onChange={(e) => changeMode(e.target.value === 'comment' ? 'comment' : 'post')} disabled={busy && run?.campaignId === draft.id}>
                 <option value="post">Đăng bài vào nhóm</option>
                 <option value="comment">Bình luận bài viết trong nhóm</option>
               </select>
@@ -366,19 +399,42 @@ export function CampaignsView() {
               <div className="campaigns__row">
                 <div className="field">
                   <label className="field__label" htmlFor="c-min">Chờ tối thiểu (giây)</label>
-                  <input id="c-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.minSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
+                  <input id="c-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={minDelayFor(draft.mode)} max={LIMITS.maxDelaySec} value={draft.delay.minSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, minSec: num(e.target.value) } })} />
                 </div>
                 <div className="field">
                   <label className="field__label" htmlFor="c-max">Chờ tối đa (giây)</label>
-                  <input id="c-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minDelaySec} max={LIMITS.maxDelaySec} value={draft.delay.maxSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
+                  <input id="c-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={minDelayFor(draft.mode)} max={LIMITS.maxDelaySec} value={draft.delay.maxSec || ''} onChange={(e) => patch({ delay: { ...draft.delay, maxSec: num(e.target.value) } })} />
                 </div>
               </div>
-              <p className="field__hint">
-                Tối thiểu cho phép: {LIMITS.minDelaySec} giây. Khuyến nghị cho {draft.groupIds.length || 10} nhóm:{' '}
-                {recommendDelay(draft.groupIds.length || 10).minSec}–{recommendDelay(draft.groupIds.length || 10).maxSec} giây.{' '}
-                <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length || 10) })}>Dùng mức khuyến nghị</button>
-              </p>
+              {draft.mode === 'comment' ? (
+                <p className="field__hint">
+                  Thời gian chờ giữa hai bình luận trong cùng một nhóm. Tối thiểu cho phép: {LIMITS.minCommentDelaySec} giây.{' '}
+                  <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length, 'comment') })}>Dùng mức mặc định</button>
+                </p>
+              ) : (
+                <p className="field__hint">
+                  Tối thiểu cho phép: {LIMITS.minDelaySec} giây. Khuyến nghị cho {draft.groupIds.length || 10} nhóm:{' '}
+                  {recommendDelay(draft.groupIds.length || 10).minSec}–{recommendDelay(draft.groupIds.length || 10).maxSec} giây.{' '}
+                  <button className="button button--small" type="button" onClick={() => patch({ delay: recommendDelay(draft.groupIds.length || 10) })}>Dùng mức khuyến nghị</button>
+                </p>
+              )}
               {warning === 'too-fast' && <p className="notice" role="alert">Tốc độ này nhanh hơn nhiều so với khuyến nghị và có thể khiến tài khoản của bạn bị hạn chế.</p>}
+              {warning === 'fast-comment' && <p className="notice" role="alert">Bình luận cách nhau dưới {LIMITS.minDelaySec} giây dễ bị Facebook coi là spam và có thể khiến tài khoản bị hạn chế. CAP tạm dừng sau {LIMITS.maxUnconfirmedComments} bình luận liên tiếp không hiện lên, và khóa chiến dịch bình luận {LIMITS.commentLockHours} giờ nếu Facebook cảnh báo hoặc chặn.</p>}
+              {draft.mode === 'comment' && (
+                <>
+                  <div className="campaigns__row">
+                    <div className="field">
+                      <label className="field__label" htmlFor="c-group-min">Nghỉ khi chuyển nhóm, tối thiểu (giây)</label>
+                      <input id="c-group-min" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minGroupBreakSec} max={LIMITS.maxGroupBreakSec} value={groupBreak.minSec || ''} onChange={(e) => patch({ groupBreak: { ...groupBreak, minSec: num(e.target.value) } })} />
+                    </div>
+                    <div className="field">
+                      <label className="field__label" htmlFor="c-group-max">Nghỉ khi chuyển nhóm, tối đa (giây)</label>
+                      <input id="c-group-max" className="field__control" type="number" inputMode="numeric" autoComplete="off" min={LIMITS.minGroupBreakSec} max={LIMITS.maxGroupBreakSec} value={groupBreak.maxSec || ''} onChange={(e) => patch({ groupBreak: { ...groupBreak, maxSec: num(e.target.value) } })} />
+                    </div>
+                  </div>
+                  <p className="field__hint">Tối thiểu cho phép: {LIMITS.minGroupBreakSec} giây.</p>
+                </>
+              )}
               {warning === 'fixed-time' && <p className="notice">Khoảng thời gian ngẫu nhiên trông tự nhiên hơn một mốc cố định.</p>}
 
               <label className="campaigns__group">
@@ -432,7 +488,8 @@ export function CampaignsView() {
             {message && <p className={message.danger ? 'notice notice--danger' : 'u-muted'} role="status">{message.text}</p>}
             <div className="runbar__actions">
               <button className="button" type="button" onClick={() => void save()}>{saved ? 'Lưu thay đổi' : 'Lưu chiến dịch'}</button>
-              <button className="button button--primary" type="button" onClick={launch} disabled={busy}>Lưu và chạy</button>
+              <button className="button button--primary" type="button" onClick={() => void launch()} disabled={busy}>Lưu và chạy</button>
+              {busy && run && <p className="u-muted">Đang có một lượt chạy ({RUN_STATUS_LABEL[run.status]}). Hãy dừng nó ở thanh trạng thái phía trên trước khi chạy chiến dịch khác.</p>}
             </div>
           </div>
         </section>

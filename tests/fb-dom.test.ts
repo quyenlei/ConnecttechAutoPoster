@@ -24,6 +24,13 @@ describe('fb-dom', () => {
     document.body.innerHTML = '<div role="dialog"><div role="button" aria-label="Đăng">Đăng</div></div>';
     expect(findPostButton(document)).not.toBeNull();
   });
+  it('detects comment limit warnings', () => {
+    for (const text of ['Bạn hiện không thể bình luận', 'Bạn tạm thời không thể bình luận', "You can't comment right now"]) {
+      document.body.textContent = text;
+      expect(detectPageProblem(document, '/groups/1')?.kind).toBe('fatal');
+    }
+  });
+
   it('detects Vietnamese blocked and no-permission pages', () => {
     document.body.textContent = 'Bạn tạm thời bị chặn';
     expect(detectPageProblem(document, '/groups/1')?.kind).toBe('fatal');

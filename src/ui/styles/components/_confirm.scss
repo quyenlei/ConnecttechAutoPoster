@@ -1,0 +1,35 @@
+@use '../abstracts/variables' as *;
+
+// Confirmation dialog drawn by the extension page (see ui/confirm.tsx).
+.confirm {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-lg;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--color-text);
+
+  &::backdrop {
+    background: rgb(0 0 0 / 45%);
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+    padding: $space-4;
+  }
+
+  &__message {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: $space-2;
+  }
+}

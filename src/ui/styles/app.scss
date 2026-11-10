@@ -3,9 +3,11 @@
 @use 'components/button';
 @use 'components/field';
 @use 'components/card';
+@use 'components/confirm';
 @use 'components/table';
 @use 'layout/shell';
 @use 'pages/backup';
 @use 'pages/campaigns';
+@use 'pages/chatbox';
 @use 'pages/groups';
 @use 'pages/overview';

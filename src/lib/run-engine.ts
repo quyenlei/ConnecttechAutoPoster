@@ -1,4 +1,4 @@
-import { randomDelaySec, type Rng } from './delay';
+import { randomDelaySec, randomGroupBreakSec, type Rng } from './delay';
 import { LIMITS } from './limits';
 import type { Campaign, LogEntry, PostOutcome, RunState } from './types';
 
@@ -65,8 +65,10 @@ export function applyOutcome(
     };
   }
 
+  // The group has nothing left to comment, or cannot be used at all: drop its remaining slots.
+  const skipGroup = campaign.mode === 'comment' && (outcome.kind === 'skipped' || outcome.kind === 'failed') && outcome.skipRemainingGroup === true;
   let consumed = 1;
-  if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
+  if (skipGroup) {
     while (consumed < state.queue.length && state.queue[consumed] === state.queue[0]) consumed++;
   }
   const queue = state.queue.slice(consumed);
@@ -81,7 +83,9 @@ export function applyOutcome(
   const consecutiveFailures = outcome.kind === 'failed' ? state.consecutiveFailures + 1 : 0;
   base.consecutiveFailures = consecutiveFailures;
 
-  if (consecutiveFailures >= LIMITS.maxConsecutiveFailures) {
+  // A comment that may have gone out but never showed up is the first sign of a silent limit: stop much sooner.
+  const unconfirmed = campaign.mode === 'comment' && outcome.kind === 'failed' && !outcome.retryable && !skipGroup;
+  if (consecutiveFailures >= LIMITS.maxConsecutiveFailures || (unconfirmed && consecutiveFailures >= LIMITS.maxUnconfirmedComments)) {
     return {
       state: { ...base, status: 'paused', reason: `${consecutiveFailures} failures in a row. Check Facebook, then resume.` },
       breakMinutes: null,
@@ -102,13 +106,13 @@ export function applyOutcome(
     };
   }
 
-  // The previous attempt already waited its delay before this read-only scan.
-  if (campaign.mode === 'comment' && outcome.kind === 'skipped' && outcome.skipRemainingGroup) {
-    return { state: { ...base, status: 'running', nextAt: now }, breakMinutes: null, retry: false };
-  }
+  // Comment campaigns wait a short delay inside a group and a longer break when moving on to another group.
+  const waitSec = campaign.mode === 'comment' && queue[0] !== state.queue[0]
+    ? randomGroupBreakSec(campaign.groupBreak, rng)
+    : randomDelaySec(campaign.delay, rng, campaign.mode);
 
   return {
-    state: { ...base, status: 'running', nextAt: now + randomDelaySec(campaign.delay, rng) * 1000 },
+    state: { ...base, status: 'running', nextAt: now + waitSec * 1000 },
     breakMinutes: null,
     retry: false,
   };
@@ -126,7 +130,7 @@ export function resume(state: RunState, campaign: Campaign, now: number, rng: Rn
     status: 'running',
     consecutiveFailures: 0,
     reason: null,
-    nextAt: now + randomDelaySec(campaign.delay, rng) * 1000,
+    nextAt: now + randomDelaySec(campaign.delay, rng, campaign.mode) * 1000,
   };
 }
 
@@ -147,7 +151,7 @@ export function continueRun(state: RunState, campaign: Campaign, logs: LogEntry[
   const attempted = state.attempted + (state.queue.length - queue.length);
   const base = { ...state, queue, attempted, consecutiveFailures: 0, retrying: undefined, reason: null };
   if (queue.length === 0) return { ...base, status: 'done', nextAt: null };
-  return { ...base, status: 'running', nextAt: now + randomDelaySec(campaign.delay, rng) * 1000 };
+  return { ...base, status: 'running', nextAt: now + randomDelaySec(campaign.delay, rng, campaign.mode) * 1000 };
 }
 
 export function stop(state: RunState): RunState {
@@ -159,3 +163,8 @@ export function stop(state: RunState): RunState {
 export function isActive(state: RunState): boolean {
   return state.status === 'running' || state.status === 'paused';
 }
+
+/** After Facebook showed a checkpoint or block during a comment run, comment runs stay locked until this time. */
+export const commentLockUntil = (haltedAt: number): number => haltedAt + LIMITS.commentLockHours * 3_600_000;
+
+export const isCommentLocked = (until: number | null, now: number): until is number => until !== null && until > now;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyOutcome, continueRun, createRun, pause, pickVariation, resume, stop } from '../src/lib/run-engine';
+import { applyOutcome, commentLockUntil, continueRun, createRun, isCommentLocked, pause, pickVariation, resume, stop } from '../src/lib/run-engine';
 import { LIMITS } from '../src/lib/limits';
 import type { Campaign, LogEntry } from '../src/lib/types';
 
@@ -40,7 +40,9 @@ describe('run engine', () => {
     run = applyOutcome(run, c, { kind: 'skipped', reason: 'no posts', skipRemainingGroup: true }, NOW).state;
     expect(run.queue).toEqual(['g2', 'g2', 'g2', 'g2', 'g2']);
     expect(run.attempted).toBe(5);
-    expect(run.nextAt).toBe(NOW);
+    // Moving on to another group waits the group break (default 10-20 s), not the comment delay.
+    expect(run.nextAt).toBeGreaterThanOrEqual(NOW + 10_000);
+    expect(run.nextAt).toBeLessThanOrEqual(NOW + 20_000);
   });
 
   it('keeps the safety break when advancing past a group', () => {
@@ -243,5 +245,78 @@ describe('continue a stopped run', () => {
     expect(continueRun(halted, c, [], NOW)).toBe(halted);
     const stoppedOther = stopped(campaign({ id: 'other' }), 1);
     expect(continueRun(stoppedOther, c, [], NOW)).toBe(stoppedOther);
+  });
+});
+
+describe('fast comment campaigns', () => {
+  const fast = (over: Partial<Campaign> = {}) =>
+    campaign({ mode: 'comment', commentsPerGroup: 3, groupIds: ['g1', 'g2'], delay: { minSec: 2, maxSec: 4 }, groupBreak: { minSec: 10, maxSec: 20 }, ...over });
+  const unconfirmed = { kind: 'failed', reason: 'not shown' } as const;
+
+  it('waits the short comment delay inside a group', () => {
+    const c = fast();
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0).state.nextAt).toBe(NOW + 2_000);
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0.999999).state.nextAt).toBe(NOW + 4_000);
+  });
+
+  it('never waits less than the comment minimum, and posts keep their own minimum', () => {
+    const c = fast({ delay: { minSec: 0, maxSec: 0 } });
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0).state.nextAt).toBe(NOW + LIMITS.minCommentDelaySec * 1000);
+    const post = campaign({ delay: { minSec: 2, maxSec: 4 } });
+    expect(applyOutcome(createRun(post, NOW), post, ok, NOW, () => 0).state.nextAt).toBe(NOW + LIMITS.minDelaySec * 1000);
+  });
+
+  it('waits the group break when the next comment is in another group', () => {
+    const c = fast({ commentsPerGroup: 1 });
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0).state.nextAt).toBe(NOW + 10_000);
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0.999999).state.nextAt).toBe(NOW + 20_000);
+  });
+
+  it('uses the default group break for a campaign saved without one', () => {
+    const c = fast({ commentsPerGroup: 1, groupBreak: undefined });
+    expect(applyOutcome(createRun(c, NOW), c, ok, NOW, () => 0).state.nextAt).toBe(NOW + 10_000);
+  });
+
+  it('drops the whole group when it cannot be used, also after a failure', () => {
+    const c = fast();
+    const skipped = applyOutcome(createRun(c, NOW), c, { kind: 'skipped', reason: 'not a member', skipRemainingGroup: true }, NOW, () => 0).state;
+    expect(skipped.queue).toEqual(['g2', 'g2', 'g2']);
+    const failed = applyOutcome(createRun(c, NOW), c, { kind: 'failed', reason: 'no feed', skipRemainingGroup: true }, NOW, () => 0).state;
+    expect(failed.queue).toEqual(['g2', 'g2', 'g2']);
+    expect(failed.consecutiveFailures).toBe(1);
+    expect(failed.status).toBe('running');
+  });
+
+  it('pauses after 2 comments in a row that never showed up', () => {
+    const c = fast({ commentsPerGroup: 5 });
+    let run = applyOutcome(createRun(c, NOW), c, unconfirmed, NOW).state;
+    expect(run.status).toBe('running');
+    run = applyOutcome(run, c, unconfirmed, NOW).state;
+    expect(run.status).toBe('paused');
+  });
+
+  it('does not pause early for failures where nothing was sent or the group was unusable', () => {
+    const c = fast({ commentsPerGroup: 5, groupIds: ['g1', 'g2', 'g3'] });
+    let run = createRun(c, NOW);
+    run = applyOutcome(run, c, { kind: 'failed', reason: 'no editor', retryable: true }, NOW).state;
+    run = applyOutcome(run, c, { kind: 'failed', reason: 'no editor', retryable: true }, NOW).state;
+    expect(run.status).toBe('running');
+    run = applyOutcome(run, c, { kind: 'failed', reason: 'no feed', skipRemainingGroup: true }, NOW).state;
+    expect(run.status).toBe('running');
+  });
+
+  it('keeps 5 failures in a row for post campaigns', () => {
+    const c = campaign();
+    let run = createRun(c, NOW);
+    for (let i = 0; i < 4; i++) run = applyOutcome(run, c, fail, NOW).state;
+    expect(run.status).toBe('running');
+  });
+
+  it('locks comment runs for 24 hours after a halt', () => {
+    const until = commentLockUntil(NOW);
+    expect(until).toBe(NOW + 24 * 3_600_000);
+    expect(isCommentLocked(until, NOW + 1)).toBe(true);
+    expect(isCommentLocked(until, until)).toBe(false);
+    expect(isCommentLocked(null, NOW)).toBe(false);
   });
 });

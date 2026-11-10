@@ -7,11 +7,15 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | Rule | Where |
 |---|---|
 | Minimum 30 s between posts, max 3600 s; invalid ranges are corrected | `lib/delay.ts`, `lib/limits.ts` |
+| Comment campaigns have their own minimum: 2 s between two comments (default 2–4 s), max 3600 s, and a break of at least 10 s (default 10–20 s) when the run moves on to another group. This is the owner's decision of 2026-11-10 to match commenting by hand; it is much faster than the post minimum and Facebook may treat it as spam. The editor shows a warning whenever the wait is under 30 s. Not verified on live Facebook at this speed. | `lib/delay.ts` `minDelayFor`, `clampGroupBreak`, `lib/limits.ts`, `lib/run-engine.ts` |
+| A comment campaign pauses after 2 failures in a row when the last one may have been sent but never showed up on the page (a possible silent limit). Failures where nothing was sent keep the limit of 5. | `lib/run-engine.ts` `applyOutcome`, `lib/limits.ts` `maxUnconfirmedComments` |
+| When a comment run is halted (checkpoint / blocked), comment runs cannot be started or continued for 24 hours; the log and the start error show when the lock ends. Post campaigns are not locked. The lock is stored locally (`local:commentLock`) and never exported. | background `commentLockProblem`, `lib/run-engine.ts` `commentLockUntil` |
+| A wait shorter than 30 s is timed inside the running service worker, because Chrome does not fire alarms sooner; the alarm is still set as the restart-safe backup, and a step called before its time does nothing. | background `schedule`, `runStep` |
 | Random wait within a range; first post immediate | `lib/run-engine.ts` |
 | Recommended delay grows with group count; warnings for too-fast or fixed times | `lib/delay.ts` |
 | Safety Break every N posts | `lib/run-engine.ts` |
 | Auto-pause after 5 consecutive failures | `lib/run-engine.ts` |
-| Halt on checkpoint / "temporarily blocked" / posting limited | `lib/fb-dom.ts`, content script |
+| Halt on checkpoint / "temporarily blocked" / posting limited / commenting limited (the comment wordings are unverified on live Facebook) | `lib/fb-dom.ts`, content script |
 | Skip groups you are not in or cannot post in | content script |
 | Max 100 groups, 10 versions, 5000 characters | `lib/limits.ts`, background validation |
 | Resume always waits a fresh delay | `run-engine.resume` |
@@ -25,12 +29,13 @@ Facebook has no public API for posting to groups, and automating the web interfa
 | A post that Facebook holds for admin approval is logged as `pending` ("Chờ duyệt"), not as a failure; it counts as sent. Detection looks for an approval notice that appears after pressing Post and is unverified on live Facebook. | `lib/fb-dom.ts` `detectPendingApproval` |
 | **Chạy tiếp** only continues a run the user stopped. It waits a fresh random delay first and drops every queued group that already has a posted or pending log entry in that run, so a post sent while pressing Stop is not repeated. A halted run (checkpoint/block) cannot be continued; clear it and start again. Daily schedules always start a full run. | `lib/run-engine.ts` `continueRun`, background |
 | Desktop notifications are opt-in (off by default, checkbox in **Tổng quan**). They are local, fire only when a run finishes, pauses by itself or is halted, and contain only the campaign name and counts. | `lib/notify.ts`, background |
-| Comment campaigns use the same delay range, Safety Break, failure pause and halt rules as post campaigns; max 100 comments per group | `lib/run-engine.ts`, `lib/limits.ts` |
+| Comment campaigns use the same Safety Break (off by default for new comment campaigns, which rest between groups instead) and halt rules as post campaigns; max 100 comments per group. A group you are not a member of, or whose feed cannot be read, is left at once instead of being opened once per comment. | `lib/run-engine.ts`, `lib/limits.ts` |
 | Comments go only to posts whose time is read as within the last 24 hours, or, in the opt-in newest-posts mode, to the first 10 feed posts (max 5 per group) where a post known to be older than 24 hours is still skipped. Posts already showing your comment or a campaign text are skipped | `lib/comment-pick.ts` `judgeFeedPost`, `lib/fb-dom.ts` `readFeedPost` |
-| Comment runs use one visible tab in the user's current window (no hidden or background posting), reused within a group and closed when the run finishes, pauses, stops or halts; the user's previous tab is then shown again. A scan looks at most 40 posts or 60 s; scrolling only loads the group's own feed | background `openGroupFeed`, `lib/limits.ts` |
+| Comment runs use one visible tab in the user's current window (no hidden or background posting), reused within a group and closed when the run finishes, pauses, stops or halts; the user's previous tab is then shown again. A scan looks at most 40 posts or 60 s and continues below the last post an earlier scan of the same page looked at; scrolling only loads the group's own feed | background `openGroupFeed`, `lib/limits.ts` |
 | When a post's time is not readable, CAP hovers up to 4 likely time labels of that post once (pointer/mouse over and out events on one element), because Facebook shows the time only under the pointer. No clicks, no random or simulated movement paths, profile links excluded. Mock-tested only | content script `revealTime`, `lib/fb-dom.ts` `findTimestampTargets`, `hoverOver` |
 | A post without a comment editor gets its own "Bình luận" button clicked once to open one; nothing else on the page is clicked | content script `commentOnPickedPost` |
 | **Lấy danh sách nhóm đã tham gia** is opt-in (button + confirmation), never runs during a run or while names are being read, and only reads the "groups you joined" section of `facebook.com/groups/joins/` in an active tab of the current window that closes afterwards (max 500 groups, 120 s). No clicks, no group page is opened, no member data. Nothing is added until the user ticks groups | background `fetchJoinedGroups`, `lib/fb-dom.ts` `findJoinedGroupsSection`, `readJoinedGroups` |
+| A run started from the chat box uses the Facebook tab it was started in (navigated from group to group, never closed); no tab is opened unless that tab is closed during the run. Runs from the dashboard tab or the schedule open their own tab. | background `startRun`, `ownRunTab`, `openGroupFeed` |
 | The post link and the run slot are saved before the comment editor opens, so a post is never commented twice and an uncertain submission is never retried automatically | background `commentInGroup` |
 | A comment counts as sent only when a new visible comment appears and the editor is cleared | content script |
 
@@ -39,6 +44,7 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 ## Privacy
 - No backend, no analytics, no telemetry, no remote code, no third-party requests. The smoke test asserts the extension makes no external calls.
 - Stored locally (`chrome.storage.local`): groups, campaigns, run state, activity log (max 2000 entries), settings (notification on/off). The Tổng quan page is computed from that log on this device.
+- `local:chatbox` holds only whether the chat box on Facebook pages is open, minimised or expanded; it is never exported.
 - `local:joinedScan` holds the last joined-groups preview (group ids and names as Facebook shows them) until the next scan; it is never exported and is deleted with the extension.
 - `local:commentTab` holds only the ids of the open comment tab, its window, the tab to return to and the group while a comment run uses it; it is cleared when the tab closes and never exported.
 - Comment campaigns keep attempted post links locally without automatic expiry run-slot identifiers for seven days, and, in newest-posts mode, a short hash of the author and the start of the post text (never the text itself, no automatic expiry) to avoid automatic retries after an uncertain submission.
@@ -54,6 +60,8 @@ CAP deliberately has **no** features for evading detection (fingerprint spoofing
 |---|---|
 | `storage` | Keep groups, campaigns, logs, run state on the device |
 | `alarms` | Wake the service worker for the next post and for the next daily schedule time (`cap-schedule`). No new permission was added for the schedule. |
+| Content script on `*://*.facebook.com/*` (chat box) | Shows the CAP chat button and window on Facebook pages. Display only: reads nothing from the page and clicks nothing. Covered by the existing `*://*.facebook.com/*` host permission. |
+| `web_accessible_resources: chatbox.html, options.html` (facebook.com only) | Lets the chat box and the full dashboard load inside the chat window on Facebook pages. |
 | `tabs` | Open the group page in a background tab (posts) or as the visible tab of the current window (comments, joined groups), message it, close it, and re-activate the user's previous tab. |
 | `notifications` | Show the opt-in desktop notification when a run finishes, pauses or is halted. Nothing is sent anywhere. |
 | host `*://*.facebook.com/*` | Run the content script and open group pages |

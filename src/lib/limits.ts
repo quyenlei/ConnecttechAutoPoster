@@ -1,7 +1,19 @@
 /** Hard limits that protect the user's account. UI cannot exceed them. */
 export const LIMITS = {
-  /** Never post to the same account faster than this. */
+  /** Post campaigns: never post to the same account faster than this. */
   minDelaySec: 30,
+  /**
+   * Comment campaigns: shortest wait between two comments. Lowered from 30 s on the owner's explicit
+   * decision (2026-11-10) to match commenting by hand; the stop rules below are what protects the account.
+   */
+  minCommentDelaySec: 2,
+  /** Comment campaigns: wait when the run moves on to another group. */
+  minGroupBreakSec: 10,
+  maxGroupBreakSec: 3600,
+  /** Comment campaigns: pause after this many failures in a row when the last one may have been sent but never showed up. */
+  maxUnconfirmedComments: 2,
+  /** After a checkpoint or block during a comment run, no comment run starts for this long. */
+  commentLockHours: 24,
   maxDelaySec: 3600,
   maxGroupsPerCampaign: 100,
   maxCommentsPerGroup: 100,
@@ -59,3 +71,6 @@ export const LIMITS = {
 } as const;
 
 export const DEFAULT_SAFETY_BREAK = { enabled: true, everyPosts: 10, breakMinutes: 15 } as const;
+/** New comment campaigns: short waits inside a group, a longer one between groups. */
+export const DEFAULT_COMMENT_DELAY = { minSec: 2, maxSec: 4 } as const;
+export const DEFAULT_GROUP_BREAK = { minSec: 10, maxSec: 20 } as const;

@@ -46,6 +46,8 @@ export interface Campaign {
   variations: string[];
   groupIds: string[];
   delay: DelayRange;
+  /** Comment campaigns only: wait in seconds when the run moves on to another group. Default when missing. */
+  groupBreak?: DelayRange;
   safetyBreak: SafetyBreak;
   schedule?: CampaignSchedule;
   /** Post campaigns only. Older campaigns have none. */
@@ -98,6 +100,11 @@ export interface CommentTab {
   groupId: string;
   /** `RunState.startedAt` of the run that opened it; another run never reuses it. */
   runStartedAt: number;
+  /**
+   * The user's own Facebook tab the run was started from (the chat box). The run navigates it from group to
+   * group and never closes it; post campaigns post in it too instead of opening background tabs.
+   */
+  keepOpen?: boolean;
 }
 
 /** Result of the last "Lấy danh sách nhóm đã tham gia". Only a preview: nothing is added until the user chooses. */
@@ -122,7 +129,10 @@ export type PostOutcome =
   /** Submitted, but the group needs admin approval before the post is visible. */
   | { kind: 'pending' }
   | { kind: 'skipped'; reason: string; skipRemainingGroup?: boolean }
-  /** `retryable` is only set when nothing was submitted, so a second attempt cannot double-post. */
-  | { kind: 'failed'; reason: string; retryable?: boolean }
+  /**
+   * `retryable` is only set when nothing was submitted, so a second attempt cannot double-post.
+   * `skipRemainingGroup`: the group itself cannot be used (comment campaigns), so its other slots are dropped.
+   */
+  | { kind: 'failed'; reason: string; retryable?: boolean; skipRemainingGroup?: boolean }
   /** Facebook asked for a checkpoint / rate limit warning: stop everything. */
   | { kind: 'fatal'; reason: string };

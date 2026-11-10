@@ -126,7 +126,7 @@ class H(http.server.BaseHTTPRequestHandler):
         else:
             page_loads.append(urllib.parse.urlparse(self.path).path)
             body, ctype = MOCK.encode(), 'text/html; charset=utf-8'
-        self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+        self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Security-Policy', "frame-src 'self'"); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
 
 tmp = tempfile.mkdtemp()
@@ -142,9 +142,37 @@ with sync_playwright() as p:
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
               "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
+    # Test only: skip every wait between runs steps (post/comment delay, group break, Safety Break, retry) so the
+    # suite does not sit through them. It runs in the test's extension pages, not in the extension: as soon as a
+    # step is scheduled, it moves the stored run's `nextAt` to now and re-creates the alarm. Unpacked extensions may
+    # use alarms shorter than 30 s. Set `window.__capSkipWaits = false` on the page for a step that needs real waits.
+    ctx.add_init_script("""
+      if (location.protocol === 'chrome-extension:' && window.top === window) {
+        window.__capSkipWaits = true;
+        setInterval(async () => {
+          if (!window.__capSkipWaits) return;
+          const { run } = await chrome.storage.local.get('run');
+          if (!run || run.status !== 'running' || run.nextAt == null || run.nextAt - Date.now() < 1000) return;
+          const now = Date.now();
+          await chrome.storage.local.set({ run: { ...run, nextAt: now } });
+          await chrome.alarms.create('cap-next-post', { when: now + 100 });
+        }, 500);
+      }
+    """)
+    # Test only: answer CAP's own confirmation dialog (ui/confirm.tsx) with "yes", in every extension frame,
+    # including the chat box framed in Facebook pages. Native browser dialogs must not appear at all.
+    ctx.add_init_script("""
+      if (location.protocol === 'chrome-extension:') {
+        new MutationObserver(() => {
+          const ok = document.querySelector('dialog.confirm[open] button[type=submit]');
+          if (ok) ok.click();
+        }).observe(document, { subtree: true, childList: true, attributes: true });
+      }
+    """)
+    native_dialogs = []
     pg = ctx.new_page(); errors = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
-    pg.on("dialog", lambda d: d.accept())  # UI asks to confirm launching a run
+    pg.on("dialog", lambda d: (native_dialogs.append(d.message), d.accept()))  # must stay empty: CAP uses its own dialog
     pg.goto(f"chrome-extension://{eid}/options.html#groups"); pg.wait_for_selector("text=Connecttech Auto Poster")
     pg.fill("#group-list", "https://www.facebook.com/groups/mock1 | Mock One\nhttps://www.facebook.com/groups/mock2 | Mock Two\nhttps://evil.example/groups/x")
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("text=Nhóm của bạn (2)")
@@ -157,7 +185,17 @@ with sync_playwright() as p:
     pg.wait_for_selector("td:text-is('Mock Group Name')", timeout=60000)
     assert pg.locator("td:text-is('Mock One')").count() == 1, "typed name must not be overwritten"
 
+    # The two ready-made campaigns: created on first install (no groups yet then), with empty text, so they
+    # cannot run yet. The button adds only missing ones: none now; after deleting one, that one again, on the 3 groups.
     pg.click("button:has-text('Chiến dịch')")
+    pg.wait_for_selector("button:text-is('Bình luận nhanh')"); pg.wait_for_selector("button:text-is('Đăng bài vào nhóm')")
+    pg.click("button:has-text('Tạo chiến dịch mặc định')")
+    pg.wait_for_selector("text=Hai chiến dịch mặc định đã có sẵn")
+    pg.evaluate("chrome.storage.local.get('campaigns').then(d => chrome.storage.local.set({ campaigns: d.campaigns.filter(c => c.id !== 'default-comment') }))")
+    pg.wait_for_selector("button:text-is('Bình luận nhanh')", state='detached')
+    pg.click("button:has-text('Tạo chiến dịch mặc định')")
+    pg.wait_for_selector("text=Đã tạo 1 chiến dịch mặc định trên 3 nhóm")
+    assert pg.locator("#c-name").input_value() == 'Bình luận nhanh'
     pg.click("button:has-text('Tạo mới')")
     pg.fill("#c-name", "Smoke")
     pg.fill("#c-var-0", "Hello A"); pg.click("button:has-text('Thêm phiên bản khác')"); pg.fill("#c-var-1", "Hello B")
@@ -271,6 +309,8 @@ with sync_playwright() as p:
     deadline = time.time() + 150
     while comments.count('Bình luận cuộn') < 2 and time.time() < deadline: time.sleep(1)
     print('scroll comments:', comment_authors[-2:], '| loads:', page_loads.count('/groups/mockscroll/') - loads_before)
+    if comment_authors[-2:] != ['Bình', 'Chi']:
+        pg.click("button:text-is('Nhật ký')"); print('\n'.join(pg.locator('tbody tr').all_inner_texts()[:8]))
     assert comment_authors[-2:] == ['Bình', 'Chi'], f"wrong posts commented: {comment_authors}"
     pg.wait_for_selector('.badge--done', timeout=60000)
     assert page_loads.count('/groups/mockscroll/') - loads_before == 1, f"group feed was loaded {page_loads.count('/groups/mockscroll/') - loads_before} times"
@@ -294,6 +334,7 @@ with sync_playwright() as p:
     pg.click("button:has-text('Chiến dịch')")
     pg.click("button:has-text('Tạo mới')")
     pg.fill('#c-name', 'Smoke tiếp tục'); pg.fill('#c-var-0', 'Hello Continue')
+    pg.evaluate('window.__capSkipWaits = false')  # Stop must be pressed during the real 30 s wait between the groups
     for lbl in ('Mock One', 'Mock Two'): pg.check(f"label:has-text('{lbl}') input")
     pg.fill('#c-min', '30'); pg.fill('#c-max', '30')
     pg.click("button:has-text('Lưu và chạy')"); pg.wait_for_selector('text=Đã bắt đầu chạy')
@@ -302,6 +343,7 @@ with sync_playwright() as p:
     pg.wait_for_selector("button:has-text('Chạy tiếp 1 nhóm còn lại')")
     assert len(posted) == before + 1, posted
     pg.click("button:has-text('Chạy tiếp 1 nhóm còn lại')")
+    pg.evaluate('window.__capSkipWaits = true')
     pg.wait_for_selector('.badge--done', timeout=120000)
     assert posted[before:] == ['Hello Continue', 'Hello Continue'], posted
     wait_for_log('Chạy tiếp lượt đã dừng')
@@ -462,6 +504,61 @@ with sync_playwright() as p:
     pg.wait_for_selector("text=Xem trước:")
     pg.click("button:text-is('Nhập dữ liệu')")
     pg.wait_for_selector("text=Đã nhập 0 nhóm, 0 chiến dịch, 0 dòng nhật ký")
+    # The chat box on a Facebook page (not only group pages): a round button opens a small window with the run
+    # status, recent activity and a start button; it expands to the full dashboard in place, minimises and closes.
+    # The mock sends a frame-src CSP like Facebook does; the extension pages must still load in the window.
+    fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: (native_dialogs.append(d.message), d.accept())); fb.goto('https://www.facebook.com/')
+    fb.click('cap-chat-host .cap-chat__launcher')
+    chat = fb.frame_locator('cap-chat-host iframe')
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    assert chat.locator('.chatbox__message').count() > 0, 'activity feed is empty'
+    fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
+    fb.click("cap-chat-host button[aria-label='Mở rộng']")
+    chat.locator("button:text-is('Chiến dịch')").wait_for(timeout=15000)
+    fb.click("cap-chat-host button[aria-label='Thu gọn']")
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    fb.click("cap-chat-host button[aria-label='Thu nhỏ']")
+    assert not fb.locator('cap-chat-host iframe').is_visible(), 'minimised window must hide its content'
+    fb.click("cap-chat-host button[aria-label='Mở lại Auto Poster']")
+    chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
+    # Started from the chat box, a run uses this very tab: it moves from group to group and no tab is opened.
+    opened = []
+    ctx.on('page', lambda page: opened.append(page))
+    before = len(posted)
+    chat.locator('#chatbox-campaign').select_option(label='Smoke (đăng bài)')
+    chat.locator("button:text-is('Chạy')").click()
+    chat.locator('.badge--running, .chatbox__error').first.wait_for(timeout=15000)
+    assert chat.locator('.chatbox__error').count() == 0, chat.locator('.chatbox__error').inner_text()
+    deadline = time.time() + 120
+    while len(posted) < before + 2 and time.time() < deadline: time.sleep(1)
+    assert posted[before:] == ['Hello A', 'Hello B'], posted[before:]
+    assert not opened, f"a run started from the chat box opened {len(opened)} tab(s)"
+    try:
+        fb.wait_for_url('**/groups/mock2/**', timeout=10000)
+    except Exception:
+        print('chat run tab url:', fb.url, '| pages:', [p.url for p in ctx.pages])
+        raise
+    fb.locator('cap-chat-host .cap-chat__window').wait_for()  # the chat box is back after each page load
+    chat.locator('.badge--done').wait_for(timeout=60000)
+    assert not fb.is_closed(), 'the user\'s tab must stay open after the run'
+    fb.click("cap-chat-host button[aria-label='Đóng']")
+    assert fb.locator('cap-chat-host .cap-chat__launcher').is_visible(), 'launcher must come back after closing'
+    fb.close()
+    assert not native_dialogs, f"native browser dialogs were used: {native_dialogs}"
     assert not errors
+
+    # Last, because it closes every extension page: reloading the extension cuts off the chat box already on an
+    # open Facebook page ("Extension context invalidated"). It must turn into a reload note instead of throwing.
+    stale = ctx.new_page(); stale_errors = []
+    stale.on('pageerror', lambda e: stale_errors.append(str(e)))
+    stale.goto('https://www.facebook.com/'); stale.locator('cap-chat-host .cap-chat__launcher').wait_for()
+    try:
+        pg.evaluate('chrome.runtime.reload()')
+    except Exception:
+        pass  # the page closes as the extension reloads
+    stale.locator('cap-chat-host .cap-chat__stale').wait_for(timeout=15000)
+    assert 'Tải lại trang' in stale.locator('cap-chat-host .cap-chat__stale').inner_text()
+    assert not stale_errors, stale_errors
+    # Under test automation the reloaded unpacked extension does not come back, so the new version is not checked here.
     print("SMOKE OK")
     ctx.close()

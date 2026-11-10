@@ -37,6 +37,7 @@ Only `https://facebook.com/groups/...` links are accepted (also `www.`, `m.`, `w
 If you add a link without a name, the list shows the group id. Press **Lấy tên nhóm** to read the real names: CAP opens each unnamed group once in a background tab and reads its title. It never changes names you typed. Names are also filled in automatically the first time CAP posts to a group. Not verified on live Facebook, where the page title may differ; you can always type the name yourself with `URL | Name`.
 
 ## 2. Create a campaign
+**Chiến dịch mặc định:** bấm **Tạo chiến dịch mặc định** trong tab Chiến dịch để có sẵn hai chiến dịch trên tất cả nhóm đã lưu: **Bình luận nhanh** (25 bài mỗi nhóm, cách nhau 2–4 giây, nghỉ 10–20 giây khi chuyển nhóm) và **Đăng bài vào nhóm** (khoảng chờ khuyến nghị, có nghỉ an toàn). Nội dung để trống: hãy viết nội dung, bỏ bớt nhóm nếu cần, rồi lưu trước khi chạy. Nút chỉ thêm chiến dịch còn thiếu, không sửa chiến dịch bạn đã có. Lần cài đặt đầu tiên, hai chiến dịch này được tạo sẵn.
 Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 1. **Name** it.
 2. **Post text**: write version 1. **Add another version** to rotate texts so consecutive groups differ (version n is used for the n-th group, then repeats).
@@ -51,11 +52,14 @@ Open **Chiến dịch** (Campaigns) → **Tạo mới** (New).
 5. **Lưu chiến dịch** (Save campaign) or **Lưu và chạy** (Save and launch).
 
 ## 3. Run
+
+**Hộp chat trên Facebook:** trên mọi trang Facebook có một nút tròn màu xanh ở góc dưới bên phải. Bấm vào để mở hộp chat Auto Poster: trạng thái lượt chạy (Tạm dừng / Tiếp tục / Dừng), các hoạt động mới nhất hiện như tin nhắn, và ô chọn chiến dịch với nút **Chạy**. Trên thanh tiêu đề: nút mũi tên mở rộng để xem cài đặt đầy đủ ngay trong hộp, nút gạch ngang để thu nhỏ, nút X để đóng. Trạng thái mở/thu nhỏ được nhớ ở mọi tab Facebook.
 The run bar is visible on every tab.
 - The first post is sent immediately; waits apply between posts.
 - **Lưu và chạy** asks you to confirm before it starts posting. Deleting a campaign, a group or the activity log also asks first. **Dừng** (Stop) never asks, so you can halt a run at once.
 - **Tạm dừng** (Pause) stops the timer. **Tiếp tục** (Resume) waits a fresh random delay first. **Dừng** (Stop) ends the run.
-- CAP opens each group in a background tab, posts, then closes it. Do not use that tab.
+- **Chạy từ hộp chat:** CAP chạy ngay trên tab Facebook bạn đang đứng. Tab tự chuyển qua từng nhóm để đăng bài hoặc bình luận, không mở tab mới và không đóng khi xong. Đừng bấm vào trang trong lúc đang chạy.
+- Chạy từ bảng điều khiển (tab riêng) hoặc theo lịch: CAP tự mở tab cho từng nhóm (đăng bài: tab nền, đóng sau khi đăng; bình luận: một tab hiển thị).
 - **Chạy tiếp**: after you press **Dừng**, a button **Chạy tiếp N nhóm còn lại** appears. It asks first, waits a fresh random delay, and skips groups that already have a posted or pending entry in that run (for example a post that went out just as you pressed Stop). It does not appear after a checkpoint/block. **Lưu và chạy** always starts from the first group again.
 - If a group fails before anything is sent (page did not load, composer not found), CAP tries the same group once more after 8 seconds; the log shows "Lỗi tạm thời, thử lại sau 8 giây". Failures that might have been submitted are never retried.
 - If Facebook holds the post for admin approval, the log shows **Chờ duyệt**. This counts as sent. Detection is not verified on live Facebook, so a pending post may still appear as **Đã đăng**.
@@ -79,7 +83,10 @@ Trong trình soạn chiến dịch, chọn **Bình luận bài viết trong nhó
 - Bài chưa hiện ô bình luận: CAP bấm nút **Bình luận** của chính bài đó để mở ô. Nếu Facebook mở bài trong hộp thoại, CAP bình luận trong hộp thoại rồi đóng nó bằng phím Esc.
 - Bình luận được gõ ngay trong feed, không mở trang bài viết riêng. Bài và lượt chạy được ghi nhận **trước khi** gõ, nên một lần gửi chưa rõ kết quả sẽ không bao giờ tự gửi lại.
 - Lượt bình luận tiếp theo trong cùng nhóm dùng lại tab đã tải, không tải lại nhóm. Sang nhóm khác, tab chuyển trang. Tab tự đóng và quay về tab bạn đang xem trước đó khi chạy xong, tạm dừng, dừng hoặc bị chặn.
-- Mỗi lượt bình luận vẫn áp dụng khoảng chờ tối thiểu 30 giây và nghỉ an toàn như đăng bài. Nhật ký ghi bài được chọn (“Chọn bài thứ 2 trong feed, đăng khoảng 10 phút trước”) hoặc lý do không chọn được bài nào (“Đã xem 12 bài: 3 đã thử trước đó, 1 bạn đã bình luận, 8 cũ hơn 24 giờ”). Khi một nhóm không còn bài phù hợp, các lượt còn lại của nhóm đó được bỏ qua ngay.
+- **Tốc độ:** chiến dịch bình luận có khoảng chờ riêng, tối thiểu 2 giây giữa hai bình luận (mặc định 2–4 giây) và nghỉ ít nhất 10 giây khi chuyển sang nhóm khác (mặc định 10–20 giây). Tốc độ này ngang với bình luận bằng tay và dễ bị Facebook coi là spam; màn hình chiến dịch hiện cảnh báo khi khoảng chờ dưới 30 giây. Nghỉ an toàn theo số lượt vẫn có, nhưng tắt sẵn ở chiến dịch bình luận mới.
+- **Quét một lần:** lượt bình luận kế tiếp trong cùng nhóm quét tiếp từ bài ngay dưới bài vừa xem, không đọc lại feed từ đầu.
+- **Khi Facebook cảnh báo:** CAP dừng hẳn, tắt mọi lịch chạy và khóa chiến dịch bình luận 24 giờ (nhật ký ghi giờ mở lại). Hãy mở Facebook, đọc cảnh báo, tự hoàn thành bước kiểm tra nếu có, và không bình luận thêm trong thời gian bị hạn chế. Nếu 2 bình luận liên tiếp được gửi mà không hiện lên trang, CAP tự tạm dừng để bạn kiểm tra.
+- Nhóm bạn chưa tham gia hoặc không đọc được feed sẽ bị bỏ qua cả nhóm ngay. Nhật ký ghi bài được chọn (“Chọn bài thứ 2 trong feed, đăng khoảng 10 phút trước”) hoặc lý do không chọn được bài nào (“Đã xem 12 bài: 3 đã thử trước đó, 1 bạn đã bình luận, 8 cũ hơn 24 giờ”). Khi một nhóm không còn bài phù hợp, các lượt còn lại của nhóm đó được bỏ qua ngay.
 
 **Chế độ “bài mới nhất” (tùy chọn):** tick **Bình luận các bài mới nhất, không cần biết giờ đăng** khi Facebook không cho đọc giờ đăng. CAP chỉ xét 10 bài đầu feed, tối đa 5 bình luận mỗi nhóm, và chấp nhận bài không rõ giờ. Bài đọc được giờ mà cũ hơn 24 giờ vẫn bị bỏ qua, nhưng bài ghim không rõ giờ có thể bị bình luận.
 

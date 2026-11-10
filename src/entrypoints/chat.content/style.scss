@@ -1,0 +1,221 @@
+// Styles of the chat window injected into Facebook pages. They live in a shadow root, so they are not part of
+// app.scss and cannot use its CSS variables; the colors repeat the dashboard's brand values.
+:host {
+  --cap-surface: #fafdff;
+  --cap-text: #0b1b3a;
+  --cap-border: #d6e2f3;
+  --cap-primary: #0046b5;
+  --cap-primary-contrast: #fff;
+  --cap-focus: #0148b9;
+
+  all: initial;
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --cap-surface: #14213a;
+    --cap-text: #e6efff;
+    --cap-border: #30415d;
+    --cap-primary: #5b9bff;
+    --cap-primary-contrast: #07142e;
+    --cap-focus: #8bb7ff;
+  }
+}
+
+.cap-chat {
+  &__icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+
+  &__launcher {
+    position: fixed;
+    right: 1rem;
+    bottom: 5rem;
+    z-index: 2147483646;
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border: 0;
+    border-radius: 50%;
+    background: var(--cap-primary);
+    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
+    color: var(--cap-primary-contrast);
+    cursor: pointer;
+
+    &[hidden] {
+      display: none;
+    }
+
+    &:focus-visible {
+      outline: 3px solid var(--cap-focus);
+      outline-offset: 3px;
+    }
+  }
+
+  &__window {
+    position: fixed;
+    right: 5rem;
+    bottom: 0;
+    z-index: 2147483647;
+    display: flex;
+    flex-direction: column;
+    width: 21rem;
+    height: min(30rem, calc(100vh - 4.5rem));
+    overflow: hidden;
+    border: 1px solid var(--cap-border);
+    border-bottom: 0;
+    border-radius: 0.5rem 0.5rem 0 0;
+    background: var(--cap-surface);
+    box-shadow: 0 0.75rem 1.75rem rgb(0 0 0 / 20%);
+    color: var(--cap-text);
+    font: 400 0.875rem/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+    &[hidden] {
+      display: none;
+    }
+
+    &--minimized {
+      width: 15rem;
+      height: auto;
+    }
+
+    &--expanded {
+      width: min(60rem, calc(100vw - 6rem));
+      height: calc(100vh - 4.5rem);
+    }
+
+    @media (max-width: 36rem) {
+      right: 0;
+      width: 100vw;
+    }
+  }
+
+  &__header {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.375rem 0.375rem 0.5rem;
+    background: var(--cap-primary);
+    color: var(--cap-primary-contrast);
+  }
+
+  &__title {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.25rem;
+    border: 0;
+    border-radius: 0.375rem;
+    background: transparent;
+    color: inherit;
+    font: 700 0.9375rem/1.2 inherit;
+    text-align: left;
+
+    &:not(:disabled) {
+      cursor: pointer;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--cap-primary-contrast);
+    }
+  }
+
+  &__avatar {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 20%);
+  }
+
+  &__header-button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: rgb(255 255 255 / 18%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--cap-primary-contrast);
+    }
+  }
+
+  &__frame {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    background: var(--cap-surface);
+  }
+
+  &__stale {
+    position: fixed;
+    right: 1rem;
+    bottom: 5rem;
+    z-index: 2147483647;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 20rem;
+    padding: 0.75rem;
+    border: 1px solid var(--cap-border);
+    border-radius: 0.5rem;
+    background: var(--cap-surface);
+    box-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 20%);
+    color: var(--cap-text);
+    font: 400 0.875rem/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  &__stale-text {
+    flex: 1 1 100%;
+    margin: 0;
+  }
+
+  &__stale-button {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid var(--cap-border);
+    border-radius: 0.375rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:first-of-type {
+      border-color: var(--cap-primary);
+      background: var(--cap-primary);
+      color: var(--cap-primary-contrast);
+    }
+
+    &:focus-visible {
+      outline: 3px solid var(--cap-focus);
+      outline-offset: 2px;
+    }
+  }
+
+  &__window--minimized &__frame {
+    display: none;
+  }
+}

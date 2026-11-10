@@ -5,10 +5,11 @@ import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
+import { withDefaultCampaigns } from '@/lib/defaults';
 import { describeRunEnd } from '@/lib/notify';
-import { applyOutcome, continueRun, createRun, IDLE_RUN, isActive, pause, pickVariation, resume, stop } from '@/lib/run-engine';
+import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -17,9 +18,9 @@ const ALARM = 'cap-next-post';
 const SCHEDULE_ALARM = 'cap-schedule';
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (r: CommandReply) => void) => {
+  browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse: (r: CommandReply) => void) => {
     if (!isRunCommand(message)) return false;
-    handleCommand(message).then(sendResponse, (e: unknown) => sendResponse({ ok: false, error: String(e) }));
+    handleCommand(message, facebookTabOf(sender)).then(sendResponse, (e: unknown) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   });
 
@@ -33,6 +34,15 @@ export default defineBackground(() => {
     void scheduleCheckItem.setValue(Date.now()).then(rescheduleAlarm);
   });
 
+  // First install: start with the two ready-made campaigns. Nothing runs until the user writes their text.
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason !== 'install') return;
+    void (async () => {
+      if ((await campaignsItem.getValue()).length > 0) return;
+      await campaignsItem.setValue(withDefaultCampaigns([], await groupsItem.getValue(), Date.now()).campaigns);
+    })();
+  });
+
   // The service worker can be restarted at any time; rebuild the timers from stored state.
   void restoreSchedule();
   void processSchedule();
@@ -43,9 +53,31 @@ async function restoreSchedule(): Promise<void> {
   if (run.status === 'running' && run.nextAt !== null) await schedule(run.nextAt);
 }
 
+/** Chrome fires an alarm no sooner than 30 s after it was created. */
+const ALARM_FLOOR_MS = 30_000;
+let shortTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The alarm is what survives a service worker restart. A wait shorter than Chrome's alarm floor (comment
+ * campaigns) is also timed in the running worker, which stays alive that long; whichever fires first runs
+ * the step, and `runStep` ignores a call that comes before `nextAt`.
+ */
 async function schedule(at: number | null): Promise<void> {
+  clearTimeout(shortTimer);
+  shortTimer = undefined;
   await browser.alarms.clear(ALARM);
-  if (at !== null) await browser.alarms.create(ALARM, { when: Math.max(at, Date.now() + 1000) });
+  if (at === null) return;
+  const wait = at - Date.now();
+  await browser.alarms.create(ALARM, { when: Math.max(at, Date.now() + 1000) });
+  if (wait < ALARM_FLOOR_MS) shortTimer = setTimeout(() => void runStep(), Math.max(0, wait));
+}
+
+/** Null when a comment run may start; otherwise why not (locked after a checkpoint or block). */
+async function commentLockProblem(campaign: Campaign): Promise<string | null> {
+  if (campaign.mode !== 'comment') return null;
+  const until = await commentLockItem.getValue();
+  if (!isCommentLocked(until, Date.now())) return null;
+  return `Facebook đã cảnh báo hoặc chặn trong lượt bình luận trước. Chiến dịch bình luận bị khóa đến ${new Date(until).toLocaleString('vi-VN')}.`;
 }
 
 const hhmm = (ts: number) => new Date(ts).toTimeString().slice(0, 5);
@@ -102,16 +134,27 @@ async function disableAllSchedules(campaignId: string): Promise<void> {
   await log(campaignId, null, 'info', 'Đã tắt toàn bộ lịch chạy vì Facebook yêu cầu kiểm tra hoặc chặn. Hãy bật lại sau khi xử lý xong trên Facebook.');
 }
 
-/** Shared by the Start button and the daily schedule. */
-async function startRun(campaignId: string): Promise<CommandReply> {
+/** The Facebook tab a command came from (the chat box is framed in one); undefined from the dashboard tab. */
+function facebookTabOf(sender: { tab?: { id?: number; windowId?: number; url?: string } }): { tabId: number; windowId: number } | undefined {
+  const tab = sender.tab;
+  if (tab?.id === undefined || tab.windowId === undefined || !/^https:\/\/([a-z0-9-]+\.)?facebook\.com\//.test(tab.url ?? '')) return undefined;
+  return { tabId: tab.id, windowId: tab.windowId };
+}
+
+/**
+ * Shared by the Start button and the daily schedule. Started from the chat box, the run uses the Facebook tab
+ * the user is on; otherwise (dashboard tab, schedule) it opens its own tab as before.
+ */
+async function startRun(campaignId: string, here?: { tabId: number; windowId: number }): Promise<CommandReply> {
   const run = await runItem.getValue();
   if (isActive(run)) return { ok: false, error: 'Đang có một lượt chạy khác.' };
   const campaign = (await campaignsItem.getValue()).find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-  const problem = validateCampaign(campaign, await campaignsItem.getValue());
+  const problem = validateCampaign(campaign, await campaignsItem.getValue()) ?? (await commentLockProblem(campaign));
   if (problem) return { ok: false, error: problem };
   const state = createRun(campaign, Date.now());
   await closeCommentWindow();
+  await commentTabItem.setValue(here ? { ...here, groupId: '', runStartedAt: state.startedAt ?? 0, keepOpen: true } : null);
   await runItem.setValue(state);
   await log(campaign.id, null, 'info', campaign.mode === 'comment'
     ? `Đã bắt đầu chạy: tối đa ${state.total} lượt bình luận trên ${campaign.groupIds.length} nhóm.`
@@ -120,11 +163,11 @@ async function startRun(campaignId: string): Promise<CommandReply> {
   return { ok: true };
 }
 
-async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
+async function handleCommand(cmd: RunCommand, here?: { tabId: number; windowId: number }): Promise<CommandReply> {
   const run = await runItem.getValue();
   switch (cmd.type) {
     case 'cap/run/start':
-      return startRun(cmd.campaignId);
+      return startRun(cmd.campaignId, here);
     case 'cap/run/pause': {
       await runItem.setValue(pause(run));
       await schedule(null);
@@ -144,7 +187,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       if (run.status !== 'stopped') return { ok: false, error: 'Chỉ chạy tiếp được lượt đã dừng.' };
       const campaign = await currentCampaign(run);
       if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
-      const problem = validateCampaign(campaign, await campaignsItem.getValue());
+      const problem = validateCampaign(campaign, await campaignsItem.getValue()) ?? (await commentLockProblem(campaign));
       if (problem) return { ok: false, error: problem };
       const next = continueRun(run, campaign, await logsItem.getValue(), Date.now());
       await runItem.setValue(next);
@@ -177,6 +220,7 @@ async function handleCommand(cmd: RunCommand): Promise<CommandReply> {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);
       await closeCommentWindow();
+      await commentTabItem.setValue(null);
       return { ok: true };
     }
   }
@@ -209,6 +253,11 @@ async function runStep(): Promise<void> {
   try {
     const run = await runItem.getValue();
     if (run.status !== 'running') return;
+    // Called early (a short timer and the alarm both exist): wait for the real time.
+    if (run.nextAt !== null && run.nextAt - Date.now() > 250) {
+      await schedule(run.nextAt);
+      return;
+    }
     const campaign = await currentCampaign(run);
     const groupId = run.queue[0];
     if (!campaign || !groupId) {
@@ -219,7 +268,7 @@ async function runStep(): Promise<void> {
     const text = pickVariation(campaign.variations, run.attempted);
 
     const outcome: PostOutcome = group
-      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign) : await postToGroup(group, text, campaign)
+      ? campaign.mode === 'comment' ? await commentInGroup(group, text, run, campaign) : await postToGroup(group, text, campaign, run)
       : { kind: 'skipped', reason: 'Nhóm đã bị xóa.' };
 
     // The name may have just been read from the page, so log with the stored group.
@@ -246,6 +295,11 @@ async function runStep(): Promise<void> {
     await runItem.setValue(state);
     if (state.status !== 'running') await closeCommentWindow();
     if (state.status === 'halted') await disableAllSchedules(campaign.id);
+    if (state.status === 'halted' && campaign.mode === 'comment') {
+      const until = commentLockUntil(Date.now());
+      await commentLockItem.setValue(until);
+      await log(campaign.id, null, 'info', `Chiến dịch bình luận bị khóa đến ${new Date(until).toLocaleString('vi-VN')}. Hãy xử lý cảnh báo trên Facebook và không bình luận thêm trong thời gian này.`);
+    }
     await schedule(state.status === 'running' ? state.nextAt : null);
     await notifyRunEnd(latest.status, state, campaign);
   } finally {
@@ -343,15 +397,30 @@ async function fetchJoinedGroups(): Promise<void> {
   }
 }
 
-async function postToGroup(group: Group, template: string, campaign: Campaign): Promise<PostOutcome> {
+/** The user's own tab this run was started from, while it is still open. */
+async function ownRunTab(run: RunState): Promise<number | undefined> {
+  const saved = await commentTabItem.getValue();
+  if (!saved?.keepOpen || saved.runStartedAt !== run.startedAt) return undefined;
+  return (await browser.tabs.get(saved.tabId).catch(() => null)) ? saved.tabId : undefined;
+}
+
+async function postToGroup(group: Group, template: string, campaign: Campaign, run: RunState): Promise<PostOutcome> {
   let tabId: number | undefined;
+  // Started from the chat box: post in the user's own tab, which is navigated and never closed.
+  const own = await ownRunTab(run);
   // Until the page has loaded nothing can have been submitted, so a failure up to that point is safe to retry.
   let loaded = false;
   try {
-    const tab = await browser.tabs.create({ url: group.url, active: false });
-    tabId = tab.id;
-    if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.', retryable: true };
-    await waitForTab(tabId);
+    if (own !== undefined) {
+      tabId = own;
+      await browser.tabs.update(own, { url: group.url });
+      await waitForTab(own, group.url);
+    } else {
+      const tab = await browser.tabs.create({ url: group.url, active: false });
+      tabId = tab.id;
+      if (tabId === undefined) return { kind: 'failed', reason: 'Không mở được tab.', retryable: true };
+      await waitForTab(tabId);
+    }
     loaded = true;
     if (hasPlaceholderName(group)) {
       const found = await askGroupName(tabId);
@@ -376,7 +445,7 @@ async function postToGroup(group: Group, template: string, campaign: Campaign): 
   } catch (e) {
     return { kind: 'failed', reason: e instanceof Error ? e.message : String(e), ...(loaded ? {} : { retryable: true }) };
   } finally {
-    if (tabId !== undefined) await browser.tabs.remove(tabId).catch(() => undefined);
+    if (tabId !== undefined && tabId !== own) await browser.tabs.remove(tabId).catch(() => undefined);
   }
 }
 
@@ -430,7 +499,8 @@ async function openGroupFeed(group: Group, run: RunState): Promise<number> {
 /** Closes the comment tab, if one is open, and shows the user's previous tab again. Never throws. */
 async function closeCommentWindow(): Promise<void> {
   const saved = await commentTabItem.getValue();
-  if (!saved) return;
+  // The user's own tab stays open and stays the run's tab, so Continue after Stop or Pause keeps using it.
+  if (!saved || saved.keepOpen) return;
   await commentTabItem.setValue(null);
   await closeVisibleTab(saved.tabId, saved.returnTabId);
 }
@@ -458,7 +528,8 @@ async function commentInGroup(group: Group, text: string, run: RunState, campaig
       ownTexts: campaign.variations.map((v) => v.trim()).filter(Boolean),
     };
     const pick = (await withTimeout(sendWithRetry(tabId, pickRequest), LIMITS.feedScanTimeoutMs + 30_000, 'Hết thời gian quét bài trong nhóm.')) as FeedPickReply;
-    if (pick.problem) return pick.problem;
+    // A group we are not a member of, or whose feed cannot be read, is left at once instead of once per slot.
+    if (pick.problem) return pick.problem.kind === 'fatal' ? pick.problem : { ...pick.problem, skipRemainingGroup: true };
     if (!pick.fingerprint || !pick.keys?.length) {
       return { kind: 'skipped', skipRemainingGroup: true, reason: pick.diagnostic ?? 'Không có bài phù hợp để bình luận.' };
     }

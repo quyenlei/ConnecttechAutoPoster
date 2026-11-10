@@ -11,6 +11,12 @@
     padding: $space-4;
   }
 
+  &--compact {
+    padding: $space-3;
+    border-radius: $radius;
+    box-shadow: none;
+  }
+
   &__head {
     display: flex;
     flex-wrap: wrap;

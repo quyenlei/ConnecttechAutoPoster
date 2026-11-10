@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampDelay, delayWarning, formatDuration, randomDelaySec, recommendDelay } from '../src/lib/delay';
+import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, randomDelaySec, randomGroupBreakSec, recommendDelay } from '../src/lib/delay';
 
 describe('delay', () => {
   it('stays inside the range', () => {
@@ -22,6 +22,28 @@ describe('delay', () => {
     expect(delayWarning({ minSec: 30, maxSec: 60 }, 20)).toBe('too-fast');
     expect(delayWarning({ minSec: 150, maxSec: 150 }, 20)).toBe('fixed-time');
     expect(delayWarning({ minSec: 150, maxSec: 300 }, 20)).toBeNull();
+  });
+  it('gives comment campaigns their own, shorter minimum', () => {
+    expect(minDelayFor('comment')).toBe(2);
+    expect(minDelayFor('post')).toBe(30);
+    expect(minDelayFor(undefined)).toBe(30);
+    expect(clampDelay({ minSec: 0, maxSec: 1 }, 'comment')).toEqual({ minSec: 2, maxSec: 2 });
+    expect(clampDelay({ minSec: 2, maxSec: 4 }, 'comment')).toEqual({ minSec: 2, maxSec: 4 });
+    expect(clampDelay({ minSec: 2, maxSec: 4 }, 'post')).toEqual({ minSec: 30, maxSec: 30 });
+    expect(randomDelaySec({ minSec: 2, maxSec: 4 }, () => 0.5, 'comment')).toBe(3);
+    expect(recommendDelay(50, 'comment')).toEqual({ minSec: 2, maxSec: 4 });
+  });
+  it('clamps the break between groups and falls back to the default', () => {
+    expect(clampGroupBreak(undefined)).toEqual({ minSec: 10, maxSec: 20 });
+    expect(clampGroupBreak({ minSec: 0, maxSec: 5 })).toEqual({ minSec: 10, maxSec: 10 });
+    expect(clampGroupBreak({ minSec: 60, maxSec: 99_999 })).toEqual({ minSec: 60, maxSec: 3600 });
+    expect(randomGroupBreakSec(undefined, () => 0)).toBe(10);
+    expect(randomGroupBreakSec({ minSec: 30, maxSec: 40 }, () => 0.999999)).toBe(40);
+  });
+  it('warns when comments are closer together than the post minimum', () => {
+    expect(delayWarning({ minSec: 2, maxSec: 4 }, 3, 'comment')).toBe('fast-comment');
+    expect(delayWarning({ minSec: 30, maxSec: 60 }, 3, 'comment')).toBeNull();
+    expect(delayWarning({ minSec: 45, maxSec: 45 }, 3, 'comment')).toBe('fixed-time');
   });
   it('formats durations', () => {
     expect(formatDuration(5)).toBe('5s');

@@ -2,6 +2,45 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [0.6.7] - 2026-11-10
+
+### Fixed
+- "Uncaught Error: Extension context invalidated" from `content-scripts/chat.js`: after the extension was reloaded or updated, the chat box already on an open Facebook page was cut off from it and threw on every click. It now notices this (on a click, or by itself within 3 s) and turns into a note "Connecttech Auto Poster vừa được cập nhật. Tải lại trang để dùng tiếp." with **Tải lại trang** and **Ẩn**. A copy left by an older version is removed when the new one starts. Smoke-tested by reloading the extension with a Facebook page open.
+
+## [0.6.6] - 2026-11-10
+
+### Fixed
+- **"Lưu và chạy" did nothing in the chat box on Facebook.** Every confirmation (start, continue, delete, discard changes, read joined groups) used the browser's `window.confirm`; inside the extension pages framed in a Facebook page that dialog can be blocked, which silently answers "no", so the buttons looked dead. They now use a dialog drawn by the page itself (`ui/confirm.tsx`, native `<dialog>`). While another run is active, a note next to "Lưu và chạy" explains why the button is disabled. The smoke test now fails if a native browser dialog appears. Mock-tested; the original failure was not reproduced on live Facebook, so the blocked dialog is the likely cause, not a confirmed one.
+
+## [0.6.5] - 2026-11-10
+
+### Added
+- **Two default campaigns.** "Bình luận nhanh" (comments, 25 per group, 2–4 s apart, 10–20 s between groups, Safety Break off) and "Đăng bài vào nhóm" (posts, recommended delay, Safety Break on), both on every saved group (max 100) and with empty text, so neither can run until the user writes it. Added automatically on first install when there are no campaigns, and any time with **Tạo chiến dịch mặc định** in the Chiến dịch tab, which adds only the ones that are missing and never changes an existing campaign. `lib/defaults.ts`.
+
+## [0.6.4] - 2026-11-10
+
+### Changed
+- **A run started from the chat box runs in that tab.** The Facebook tab where **Chạy** was pressed is navigated from group to group, for comment and post campaigns alike; no tab or window is opened and the tab is never closed (it stays on the last group). Pause, Stop and Continue keep using it. If the user closes it during the run, CAP falls back to opening its own tab. Runs started from the dashboard tab or by the daily schedule open their own tab as before. The confirmation says the tab will be used. Checked on the local mock (2 posts in the same tab, no tab opened); not yet seen on live Facebook.
+
+## [0.6.3] - 2026-11-10
+
+### Added
+- **Chat box on Facebook.** A round button in the bottom-right corner of every facebook.com page opens a small Messenger-style window: run status with pause/resume/stop, the latest 40 log entries as messages (sent posts and comments on the right), and a campaign picker with a **Chạy** button. The title bar can minimise it to a bar, expand it to the full dashboard inside the same window, or close it. Open/minimised/expanded is remembered in `local:chatbox` and shared by all Facebook tabs. The window is a shadow root outside `<body>` that frames the extension's own `chatbox.html` / `options.html` (now web-accessible for facebook.com only); it loads only once opened. Display only: it reads nothing from the page and clicks nothing. No permission or host was added. Checked on the local mock (which sends a `frame-src` CSP like Facebook); not yet seen on live Facebook. Replaces the side panel briefly built in 0.6.2.
+
+### Changed
+- Smoke test: every wait between run steps is skipped by a test-only script in the test's extension pages (it moves the stored `nextAt` to now). The extension itself is unchanged. The Stop/Continue step still uses the real 30 s wait, and the daily schedule step still waits for the real clock minute.
+
+## [0.6.1] - 2026-11-10
+
+### Changed
+- **Comment campaigns are much faster (owner's decision, 2026-11-10).** Unit tests and the local mock pass; **not verified on live Facebook at this speed.**
+  - Own minimum wait between two comments: 2 s (`LIMITS.minCommentDelaySec`), default 2–4 s for new comment campaigns. Post campaigns keep 30 s. Existing comment campaigns keep the delay they were saved with. The editor warns when the wait is under 30 s.
+  - New `Campaign.groupBreak`: the wait when the run moves on to another group, at least 10 s, default 10–20 s (also for campaigns saved without one). A group with no usable post is now left after this break instead of immediately. Safety Break is off by default for new comment campaigns and unchanged for existing ones.
+  - The feed scan continues below the last post an earlier scan of the same page looked at, instead of reading the feed from the top for every comment.
+  - Waits under 30 s are timed in the running service worker (Chrome alarms cannot fire sooner); the alarm remains as the backup after a worker restart.
+  - Safety added with the speed: a comment campaign pauses after 2 failures in a row when the last one may have been sent but never showed up (was 5); a comment run halted by a checkpoint or block locks all comment runs for 24 hours (`local:commentLock`, never exported); comment limit wordings were added to the block detection (unverified on live Facebook).
+  - Fixed: a group the user is not a member of, or whose feed cannot be read, was opened once per comment slot (and could auto-pause the run by itself); it is now left at once.
+
 ## [0.6.0] - 2026-11-10
 
 ### Changed
