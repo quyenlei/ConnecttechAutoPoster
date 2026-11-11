@@ -1,10 +1,13 @@
 # Builds and tests the Connecttech launcher (launcher/, Tauri) on the systems users run. Local mocks only.
 name: Launcher
 
+# Only when the app changes (CAP-only changes do not build it).
 on:
   pull_request:
+    paths: ['launcher/**', '.github/workflows/launcher.yml']
   push:
     branches: [main]
+    paths: ['launcher/**', '.github/workflows/launcher.yml']
 
 jobs:
   build:

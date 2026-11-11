@@ -1,13 +1,13 @@
 # Release pipeline: runs when a pull request is merged into main (any push to main). Other branches never release.
-# - If package.json's version already has a GitHub release, nothing happens (a PR that did not bump the version).
-# - Otherwise: build the Connecttech app for Windows, macOS (Apple silicon and Intel) and Linux, create the tag
-#   v<version> on that commit and the GitHub release with the CAP zip and the app installers (CHANGELOG section as
-#   notes), then point update.json on the `update` branch at it.
-# To release: in your PR, bump the version in package.json and launcher/src-tauri/Cargo.toml and add a CHANGELOG
-# section for it; merging the PR publishes it.
-# App installers carry fixed names, so https://github.com/<repo>/releases/latest/download/<name> always works:
-#   Connecttech-windows-x64-setup.exe, Connecttech-mac-arm64.dmg, Connecttech-mac-x64.dmg,
-#   Connecttech-linux-amd64.AppImage, Connecttech-linux-amd64.deb
+# CAP (the extension) and the Connecttech app (launcher/) have their own versions and release on their own:
+# - CAP: when package.json's version has no release `v<version>` yet -> typecheck, tests, scripts/release.mjs
+#   (zip + release `v<version>` + update.json). No app build.
+# - App: when launcher/package.json's version has no release `app-v<version>` yet -> build the installers for
+#   Windows, macOS (Apple silicon, Intel) and Linux, then scripts/release-app.mjs (release `app-v<version>`, never
+#   marked Latest, + `app` in update.json).
+# - A merge that bumps neither version publishes nothing.
+# To release: bump the version you changed (CAP: package.json + CHANGELOG.md; app: launcher/package.json +
+# launcher/src-tauri/Cargo.toml + launcher/CHANGELOG.md) in the PR; merging the PR publishes it.
 # The app is not notarized yet: users allow it once (Windows SmartScreen, macOS Privacy & Security).
 name: Release
 
@@ -26,29 +26,52 @@ jobs:
   check:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      new: ${{ steps.version.outputs.new }}
+      cap_new: ${{ steps.cap.outputs.new }}
+      app_new: ${{ steps.app.outputs.new }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - id: version
+      - name: Write the release check
+        run: |
+          cat > "$RUNNER_TEMP/released.sh" <<'SH'
+          # $1 tag -> prints new=true (404) or new=false (200); stops on any other answer.
+          status=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" --silent -i 2>/dev/null | head -1 | awk '{print $2}')
+          echo "GitHub answered $status for $1"
+          case "$status" in
+            200) echo "new=false" >> "$GITHUB_OUTPUT"; echo "$1 is already released." ;;
+            404) echo "new=true" >> "$GITHUB_OUTPUT"; echo "$1 will be released." ;;
+            *) gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" --silent; echo "Could not tell whether $1 exists."; exit 1 ;;
+          esac
+          SH
+      - id: cap
+        run: bash "$RUNNER_TEMP/released.sh" "v$(node -p "require('./package.json').version")"
+      - id: app
+        run: bash "$RUNNER_TEMP/released.sh" "app-v$(node -p "require('./launcher/package.json').version")"
+
+  cap-release:
+    name: CAP release
+    needs: check
+    if: needs.check.outputs.cap_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: node scripts/release.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          version=$(node -p "require('./package.json').version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          # 200: released already, skip. 404: new version, release. Anything else: stop and show why.
-          status=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" --silent -i 2>/dev/null | head -1 | awk '{print $2}')
-          echo "GitHub answered $status for v$version"
-          case "$status" in
-            200) echo "new=false" >> "$GITHUB_OUTPUT"; echo "v$version is already released; nothing to do." ;;
-            404) echo "new=true" >> "$GITHUB_OUTPUT"; echo "Releasing v$version." ;;
-            *) gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" --silent; echo "Could not tell whether v$version exists."; exit 1 ;;
-          esac
 
-  launcher:
+  app-build:
     name: app (${{ matrix.name }})
     needs: check
-    if: needs.check.outputs.new == 'true'
+    if: needs.check.outputs.app_new == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -122,27 +145,23 @@ jobs:
           path: dist-app/*
           if-no-files-found: error
 
-  release:
-    needs: [check, launcher]
-    if: needs.check.outputs.new == 'true'
+  app-release:
+    name: app release
+    needs: [check, app-build, cap-release]
+    # After CAP's release when both are new (both write update.json); still runs when CAP had nothing to release.
+    if: always() && needs.check.outputs.app_new == 'true' && needs.app-build.result == 'success' && needs.cap-release.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
       - uses: actions/download-artifact@v4
         with:
           pattern: app-*
           merge-multiple: true
           path: .output/launcher
       - run: ls -la .output/launcher
-      - name: Publish
-        run: node scripts/release.mjs
+      - run: node scripts/release-app.mjs
         env:
           GH_TOKEN: ${{ github.token }}
