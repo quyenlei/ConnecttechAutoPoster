@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 ## [Unreleased]
 
 ### Added
-- **Connecttech app (desktop launcher, owner decision 2026-11-11).** One installer per system (`Connecttech_<version>_x64-setup.exe`, `Connecttech_<version>_aarch64.dmg` / `_x64.dmg`, `Connecttech_<version>_amd64.AppImage` / `.deb`) instead of scripts. On first start the user picks:
+- **Connecttech app (desktop launcher, owner decision 2026-11-11).** One installer per system, with fixed names so `releases/latest/download/<name>` always works: `Connecttech-windows-x64-setup.exe`, `Connecttech-mac-arm64.dmg` (Apple silicon), `Connecttech-mac-x64.dmg` (Intel), `Connecttech-linux-amd64.AppImage` / `.deb`. Built and attached by the release workflow; a manual run of that workflow builds them without publishing. On first start the user picks:
   - **Trình duyệt riêng (tự động):** the app downloads Google's *Chrome for Testing* (about 150 MB, from `storage.googleapis.com/chrome-for-testing-public` only) and CAP, then **Mở CAP** starts that browser with CAP already loaded, in one profile owned by the app. No Developer mode, no Load unpacked. Updates are applied only while that browser is closed.
   - **Chrome có sẵn (thủ công một lần):** the app puts CAP in a fixed folder and guides Developer mode and Load unpacked once; later updates replace that folder.
   - Same checks as the script helper (HTTPS, CAP releases only, SHA-256 required, version match). Checks for updates at start and once a day. Not code-signed yet: Windows SmartScreen and macOS Gatekeeper ask once.

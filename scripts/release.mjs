@@ -46,7 +46,8 @@ if (!repo || !branch) throw new Error('UPDATE_REPO or UPDATE_BRANCH not found in
 const tag = `v${version}`;
 
 // In CI the pushed tag must match package.json, so a tag never publishes another version's build.
-const ref = process.env.GITHUB_REF_NAME;
+// A manual dry run (workflow_dispatch) runs on a branch, so only a tag ref is checked.
+const ref = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined;
 if (ref && ref !== tag) throw new Error(`Tag ${ref} does not match package.json version ${version}.`);
 
 const changelog = read('CHANGELOG.md');

@@ -1,42 +1,55 @@
-# Pushing a tag v<version> (matching package.json, with a CHANGELOG section) checks, builds and publishes it:
-# Connecttech launcher installers for Windows, macOS (Apple silicon and Intel) and Linux are built first; then the
-# GitHub release with the zip, the helper installers and the launcher, then update.json on the `update` branch.
-# The launcher is not code-signed yet: users allow it once (see HUONG_DAN_CAI_DAT.md).
+# Release pipeline.
+# - Push a tag v<version> (matching package.json, with a CHANGELOG section): build the Connecttech app for Windows,
+#   macOS (Apple silicon and Intel) and Linux, then create the GitHub release with the CAP zip, the helper
+#   installers and the app installers, then point update.json on the `update` branch at it.
+# - Run it by hand (Actions -> Release -> Run workflow) on any branch: the same builds, uploaded as workflow
+#   artifacts, and `release.mjs --dry-run`. Nothing is published.
+# App installers carry fixed names, so https://github.com/<repo>/releases/latest/download/<name> always works:
+#   Connecttech-windows-x64-setup.exe, Connecttech-mac-arm64.dmg, Connecttech-mac-x64.dmg,
+#   Connecttech-linux-amd64.AppImage, Connecttech-linux-amd64.deb
+# The app is not code-signed yet: users allow it once (Windows SmartScreen, macOS Privacy & Security).
 name: Release
 
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   launcher:
+    name: app (${{ matrix.name }})
     strategy:
       fail-fast: true
       matrix:
         include:
-          - os: windows-latest
+          - name: windows-x64
+            os: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis
-          - os: macos-latest
+          - name: mac-arm64
+            os: macos-latest
             target: aarch64-apple-darwin
             bundles: dmg
-          - os: macos-latest
+          - name: mac-x64
+            os: macos-latest
             target: x86_64-apple-darwin
             bundles: dmg
-          - os: ubuntu-22.04
+          - name: linux-amd64
+            os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: launcher
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Linux packages
@@ -52,19 +65,29 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+          key: ${{ matrix.target }}
       - run: pnpm install
       - run: cargo test --manifest-path src-tauri/Cargo.toml
         if: matrix.target != 'x86_64-apple-darwin'
       - run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Collect installers under fixed names
+        run: |
+          bundle=src-tauri/target/${{ matrix.target }}/release/bundle
+          mkdir -p ../dist-app
+          for f in "$bundle"/nsis/*.exe;           do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}-setup.exe"; done
+          for f in "$bundle"/dmg/*.dmg;            do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.dmg"; done
+          for f in "$bundle"/appimage/*.AppImage;  do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.AppImage"; done
+          for f in "$bundle"/deb/*.deb;            do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.deb"; done
+          ls -la ../dist-app
+          [ -n "$(ls ../dist-app)" ] || { echo "no installer built"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
-          name: launcher-${{ matrix.target }}
+          name: app-${{ matrix.name }}
+          path: dist-app/*
           if-no-files-found: error
-          path: |
-            launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            launcher/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-            launcher/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
 
   release:
     needs: launcher
@@ -81,10 +104,15 @@ jobs:
       - run: pnpm test
       - uses: actions/download-artifact@v4
         with:
-          pattern: launcher-*
+          pattern: app-*
           merge-multiple: true
           path: .output/launcher
       - run: ls -la .output/launcher
-      - run: node scripts/release.mjs
+      - name: Publish
+        if: github.event_name == 'push'
+        run: node scripts/release.mjs
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Dry run (manual run, nothing published)
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/release.mjs --dry-run
