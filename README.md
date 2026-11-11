@@ -37,7 +37,9 @@ pnpm build      # production build in .output/chrome-mv3
 
 Install manually: open `chrome://extensions`, enable **Developer mode**, **Load unpacked**, select `.output/chrome-mv3`. Log in to Facebook in the same Chrome profile, then click the extension icon and **Open dashboard**.
 
-For users (Windows, macOS or Linux): download `cap-updater-windows.zip`, `cap-updater-mac.zip` or `cap-updater-linux.zip` from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest), unzip it and run `install.bat`, `install.command` or `bash install.sh`. It installs CAP into a fixed folder to load with **Load unpacked**; later versions then install with **Cập nhật ngay** in CAP.
+For users, the easiest way is the **Connecttech app** from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest) (`.exe`, `.dmg`, `.AppImage`/`.deb`): it either runs CAP in its own Chrome for Testing window with nothing to set up, or installs CAP for your own Chrome with one guided Load unpacked. Source in `launcher/` (Tauri).
+
+Script alternative (Windows, macOS or Linux): download `cap-updater-windows.zip`, `cap-updater-mac.zip` or `cap-updater-linux.zip` from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest), unzip it and run `install.bat`, `install.command` or `bash install.sh`. It installs CAP into a fixed folder to load with **Load unpacked**; later versions then install with **Cập nhật ngay** in CAP.
 
 ## Using it
 

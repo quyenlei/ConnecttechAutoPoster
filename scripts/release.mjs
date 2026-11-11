@@ -5,9 +5,11 @@
 //    that version as notes; the tag must already be pushed;
 // 2. only then points `update.json` on the `update` branch (UPDATE_BRANCH) at that release, so CAP never
 //    announces a version whose zip does not exist yet. update.json carries the zip's SHA-256 for the helper.
+// Connecttech launcher installers built by the workflow's `launcher` job are attached from .output/launcher/ when
+// that folder exists.
 // It does not bump the version. `--dry-run` builds the zips and prints the notes and update.json without publishing.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,15 +82,19 @@ const manifest = {
   publishedAt: new Date().toISOString(),
 };
 
+// Desktop app installers (launcher/), downloaded into .output/launcher/ by the release workflow.
+const launcherDir = join(root, '.output', 'launcher');
+const launcher = existsSync(launcherDir) ? readdirSync(launcherDir).map((name) => join(launcherDir, name)) : [];
+
 if (dryRun) {
-  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${[zip, ...installers].join(', ')}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
+  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${[zip, ...installers, ...launcher].join(', ')}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
   process.exit(0);
 }
 
 const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
 writeFileSync(notesFile, notes);
 console.log(`Publishing ${tag} to ${repo}`);
-run('gh', ['release', 'create', tag, zip, ...installers, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]);
+run('gh', ['release', 'create', tag, zip, ...installers, ...launcher, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]);
 
 // One commit per release on the `update` branch, holding update.json and nothing else.
 const parent = ghApi([`repos/${repo}/git/ref/heads/${branch}`], undefined, true)?.object?.sha ?? null;
