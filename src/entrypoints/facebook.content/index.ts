@@ -123,6 +123,7 @@ const asCandidate = (post: FeedPost): FeedCandidate => ({
   age: post.age,
   mine: post.mine,
   canComment: post.editor !== null || post.commentAction !== null,
+  minute: post.minute,
 });
 
 /** The post chosen by the last scan. It stays in this page so the comment goes to exactly that element. */
@@ -231,7 +232,7 @@ async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
       reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
     }
     reasons.push(reason);
-    trace.push(`#${index}:${post.fingerprint ?? '-'}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
+    trace.push(`#${index}:${post.fingerprint ?? '-'}${post.minute === null ? '' : `@${post.minute}`}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
     const id = post.fingerprint ?? post.url;
     if (reason === null && id) {
       picked = { fingerprint: id, post };

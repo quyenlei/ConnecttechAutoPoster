@@ -12,8 +12,10 @@ const post = (extra: Partial<FeedCandidate> = {}): FeedCandidate => ({
 });
 
 describe('comment keys', () => {
-  it('uses the post link when known and the fingerprint', () => {
-    expect(commentKeys('g', { fingerprint: 'fp', url: 'https://www.facebook.com/groups/g/posts/1/' })).toEqual(['https://www.facebook.com/groups/g/posts/1/', 'feed:g:fp']);
+  it('uses only the post link when known, and the fingerprint otherwise', () => {
+    expect(commentKeys('g', { fingerprint: 'fp', url: 'https://www.facebook.com/groups/g/posts/1/' })).toEqual(['https://www.facebook.com/groups/g/posts/1/']);
+    expect(commentKeys('g', { fingerprint: 'fp', url: null })).toEqual(['feed:g:fp']);
+    expect(commentKeys('g', { fingerprint: 'fp', url: null, minute: 7 })).toEqual(['feed:g:fp@7']);
     expect(commentKeys('g', { fingerprint: null, url: null })).toEqual([]);
   });
 
@@ -40,6 +42,25 @@ describe('judgeFeedPost', () => {
     expect(judgeFeedPost(post(), 'recent', new Set(['feed:g:fp1']), 'g')).toBe('tried');
     const url = 'https://www.facebook.com/groups/g/posts/1/';
     expect(judgeFeedPost(post({ fingerprint: 'new', url }), 'recent', new Set([url]), 'g')).toBe('tried');
+  });
+
+  it('does not mistake a repost with the same author and text for a tried post once its link is known', () => {
+    const repost = post({ url: 'https://www.facebook.com/groups/g/posts/2/' });
+    expect(judgeFeedPost(repost, 'recent', new Set(['feed:g:fp1', 'https://www.facebook.com/groups/g/posts/1/']), 'g')).toBeNull();
+  });
+
+  it('tells a repost without a link apart by the minute it was posted (seen live 2026-11-11)', () => {
+    const tried = new Set([feedKey('g', 'fp1', 20)]);
+    expect(judgeFeedPost(post({ minute: 21 }), 'recent', tried, 'g')).toBeNull();
+    expect(judgeFeedPost(post({ minute: 20 }), 'recent', tried, 'g')).toBe('tried');
+    // Keys stored before the minute was used do not block a post whose minute is known.
+    expect(judgeFeedPost(post({ minute: 21 }), 'recent', new Set([feedKey('g', 'fp1')]), 'g')).toBeNull();
+  });
+
+  it('treats any key of the same post as tried when its minute cannot be read', () => {
+    expect(judgeFeedPost(post({ minute: null }), 'recent', new Set([feedKey('g', 'fp1', 20)]), 'g')).toBe('tried');
+    expect(judgeFeedPost(post({ minute: null }), 'recent', new Set([feedKey('g', 'fp1')]), 'g')).toBe('tried');
+    expect(judgeFeedPost(post({ minute: null }), 'recent', new Set([feedKey('g', 'fp10', 20)]), 'g')).toBeNull();
   });
 
   it('skips posts the user already commented on', () => {

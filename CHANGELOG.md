@@ -2,6 +2,12 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+- **New posts were skipped as "đã thử trước đó" when an older post had the same author and text** (seen live 2026-11-11 in a group where Facebook shows no post links). Without a link a post was known only by a fingerprint of author + text, so a repost shared the key of the old one and was never commented. The key now adds the minute of the hour the post was made (`feed:<group>:<fingerprint>@<minute>`), read from the post's own full-date label ("Thứ Tư, 11 Tháng 11, 2026 lúc 08:21"), a `time` element or Facebook's structured data, never from a comment. Only the minute is used because Facebook sometimes renders that date in another time zone, which shifts whole hours. When a post has a link, the link alone is its key. When neither a link nor the minute can be read, any stored key of the same fingerprint still counts as tried, as before. Keys saved by earlier versions (no minute) no longer block a post whose minute is known, so such a post can be tried once more; a post that already shows the user's comment is still skipped. The scan trace shows `fingerprint@minute`. Checked live, read-only, on the group where it was reported: a repost from 9 minutes ago and the original from 15 hours ago got different keys and were both picked; one real comment had been sent there earlier with the owner's confirmation.
+- Tried and dropped: hovering the time label to make Facebook show the post link. Live in that group neither synthetic events nor a real pointer move added the link (the label's `href` stays `?__cft__…`), so CAP does not hover for links.
+
 ## [0.6.8] - 2026-11-10
 
 ### Added

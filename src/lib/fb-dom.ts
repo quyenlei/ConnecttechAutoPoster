@@ -472,18 +472,10 @@ function readPostUrl(item: HTMLElement, groupId: string): string | null {
   return urls.size === 1 ? [...urls][0]! : null;
 }
 
-/** Time of the post: structured data, a `time` element, a tooltip date, or the short label in the post header. */
-export function readPostAge(item: HTMLElement, now: number, structured?: ReadonlyMap<string, number>, url?: string | null): PostAge | null {
-  const labelled = (age: PostAge | null, label: string): PostAge | null => (age ? { ...age, label: label.trim().slice(0, 60) } : null);
-  const known = url ? structured?.get(url) : undefined;
-  if (known !== undefined && known <= now) return { minAgeMs: now - known, maxAgeMs: now - known, label: 'dữ liệu bài' };
+/** Every time label of the post header, in page order: tooltip/label references first, then visible text. */
+function headerTimeLabels(item: HTMLElement): { times: HTMLElement[]; labels: string[] } {
   const stop = findItemEditor(item) ?? findItemCommentAction(item);
   const header = (el: Element) => before(el, stop);
-  for (const time of own<HTMLElement>(item, 'time[datetime]').filter(header)) {
-    const at = Date.parse(time.getAttribute('datetime') ?? '');
-    if (Number.isFinite(at) && at <= now) return { minAgeMs: now - at, maxAgeMs: now - at, label: time.getAttribute('datetime') ?? '' };
-  }
-  // Every time label of the header, in page order: tooltip/label references first, then visible text.
   const doc = item.ownerDocument;
   const labels: string[] = [];
   for (const el of own<HTMLElement>(item, '[aria-describedby], [aria-labelledby]').filter(header)) {
@@ -494,8 +486,41 @@ export function readPostAge(item: HTMLElement, now: number, structured?: Readonl
     if (el.children.length > 0 && el.tagName !== 'A') continue;
     labels.push(el.getAttribute('aria-label') ?? '', el.textContent ?? '');
   }
+  return { times: own<HTMLElement>(item, 'time[datetime]').filter(header), labels };
+}
+
+/** Time of the post: structured data, a `time` element, a tooltip date, or the short label in the post header. */
+export function readPostAge(item: HTMLElement, now: number, structured?: ReadonlyMap<string, number>, url?: string | null): PostAge | null {
+  const labelled = (age: PostAge | null, label: string): PostAge | null => (age ? { ...age, label: label.trim().slice(0, 60) } : null);
+  const known = url ? structured?.get(url) : undefined;
+  if (known !== undefined && known <= now) return { minAgeMs: now - known, maxAgeMs: now - known, label: 'dữ liệu bài' };
+  const { times, labels } = headerTimeLabels(item);
+  for (const time of times) {
+    const at = Date.parse(time.getAttribute('datetime') ?? '');
+    if (Number.isFinite(at) && at <= now) return { minAgeMs: now - at, maxAgeMs: now - at, label: time.getAttribute('datetime') ?? '' };
+  }
   const ages = labels.map((text) => labelled(parseAgeLabel(text, now), text)).filter((age): age is PostAge => age !== null);
   return ages.find((age) => !age.absolute) ?? ages[0] ?? null;
+}
+
+/**
+ * Minute of the hour (0-59) the post was made, from an exact time: structured data, a `time` element or a full
+ * date such as "Thứ Tư, 11 Tháng 11, 2026 lúc 08:21". Relative labels ("5 phút") are not exact enough. Only the
+ * minute is used because the full date can come in another time zone, which shifts whole hours.
+ */
+export function readPostMinute(item: HTMLElement, now: number, structured?: ReadonlyMap<string, number>, url?: string | null): number | null {
+  const known = url ? structured?.get(url) : undefined;
+  if (known !== undefined) return new Date(known).getMinutes();
+  const { times, labels } = headerTimeLabels(item);
+  for (const time of times) {
+    const at = Date.parse(time.getAttribute('datetime') ?? '');
+    if (Number.isFinite(at)) return new Date(at).getMinutes();
+  }
+  for (const label of labels) {
+    const at = parseFacebookDate(label, now);
+    if (Number.isFinite(at)) return new Date(at).getMinutes();
+  }
+  return null;
 }
 
 const AUTHOR_IN_LABEL = /(?:bình luận về bài viết của|comment on)\s+(.+?)(?:'s post)?(?:,\s*\d+\s+.+)?$/i;
@@ -557,6 +582,8 @@ export interface FeedPost {
   fingerprint: string | null;
   url: string | null;
   age: PostAge | null;
+  /** Minute of the hour the post was made, when an exact time is shown (see `readPostMinute`). */
+  minute: number | null;
   /** Already shows a comment by the logged-in user or with a campaign text. */
   mine: boolean;
   editor: HTMLElement | null;
@@ -583,6 +610,7 @@ export function readFeedPost(item: HTMLElement, ctx: FeedReadContext): FeedPost 
     fingerprint: author || body ? postFingerprint(author, body) : null,
     url,
     age: readPostAge(item, ctx.now, ctx.structured, url),
+    minute: readPostMinute(item, ctx.now, ctx.structured, url),
     mine: hasMyComment(item, ctx.myName, ctx.ownTexts),
     editor: findItemEditor(item),
     commentAction: findItemCommentAction(item),
