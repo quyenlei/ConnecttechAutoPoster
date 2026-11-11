@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-11
+
 ### Added
 - **One-click updates on Linux.** New `cap-updater-linux.zip` in every release: run `bash install.sh` in a terminal (no sudo). It installs CAP into `~/.local/share/ConnecttechAutoPoster/extension` and registers the updater with Google Chrome, and with Chromium when it is set up. Same helper protocol and checks as macOS (SHA-256, CAP releases on github.com only, acts only after **Cập nhật ngay**). CAP now offers this installer on Linux; ChromeOS and Android still get none. Snap and Flatpak Chromium cannot start native messaging hosts. `pnpm test:updater` now also runs on Linux in CI. Verified in an Ubuntu 24.04 container (mock test plus a real install of 0.7.4), not yet in a desktop Chrome on Linux.
 
