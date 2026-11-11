@@ -4,6 +4,17 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+### Removed
+- **The script updater helper** (`updater/`, `cap-updater-*.zip`, `install.bat` / `install.command` / `install.sh`), the **Cập nhật ngay** button, `lib/updater.ts` and the `nativeMessaging` permission. The Connecttech app replaces them. Releases no longer attach `cap-updater-*.zip`, so the installer links in CAP 0.7.4–0.7.5 stop working. People who installed the helper: install the Connecttech app; the old helper folder and its Chrome registration can be deleted (they do nothing without the button). CI for the helper (`.github/workflows/updater.yml`, `e2e/updater_e2e.py`) is gone too.
+
+### Added
+- **Connecttech app (desktop launcher, owner decision 2026-11-11).** One installer per system, with fixed names so `releases/latest/download/<name>` always works: `Connecttech-windows-x64-setup.exe`, `Connecttech-mac-arm64.dmg` (Apple silicon), `Connecttech-mac-x64.dmg` (Intel), `Connecttech-linux-amd64.AppImage` / `.deb`. Built and attached by the release workflow; a manual run of that workflow builds them without publishing. On first start the user picks:
+  - **Trình duyệt riêng (tự động):** the app downloads Google's *Chrome for Testing* (about 150 MB, from `storage.googleapis.com/chrome-for-testing-public` only) and CAP, then **Mở CAP** starts that browser with CAP already loaded, in one profile owned by the app. No Developer mode, no Load unpacked. Updates are applied only while that browser is closed.
+  - **Chrome có sẵn (thủ công một lần):** the app puts CAP in a fixed folder and guides Developer mode and Load unpacked once; later updates replace that folder.
+  - Same checks as the script helper (HTTPS, CAP releases only, SHA-256 required, version match). Checks for updates at start and once a day. Not code-signed yet: Windows SmartScreen and macOS Gatekeeper ask once.
+- CAP reloads itself when its folder holds a newer version (checked hourly and when a run ends; never during a run). Reads only its own `manifest.json`. The update notice mentions the app.
+- Verified: Rust unit tests (31), a real install of 0.7.5 and Chrome for Testing 157 on macOS, CAP's self-reload in Chrome for Testing with Developer mode. Not yet verified on a user's Windows or Linux desktop.
+
 ## [0.7.5] - 2026-11-11
 
 ### Added
