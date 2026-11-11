@@ -12,7 +12,7 @@ pnpm typecheck   # must be clean
 pnpm test            # unit + DOM tests
 pnpm build       # .output/chrome-mv3
 pnpm test:e2e    # build + browser smoke test against a LOCAL MOCK (DNS-blocked, no real network)
-pnpm test:updater # updater helper on this OS against a local mock (CI: Windows + macOS)
+pnpm test:updater # updater helper on this OS against a local mock (CI: Windows + macOS + Linux)
 ```
 Run typecheck + test before claiming work done; run test:e2e after touching background, content script, storage or UI flows.
 
@@ -22,7 +22,7 @@ Run typecheck + test before claiming work done; run test:e2e after touching back
 - `src/lib/fb-dom.ts` the only place for Facebook selectors and text hints.
 - `src/lib/limits.ts` hard safety limits.
 - `src/entrypoints/background.ts` orchestration; `facebook.content/` page driver; `options/`, `popup/` UI roots.
-- `updater/` optional one-click updater helper (Windows PowerShell + macOS bash, native messaging host) and its test; `.github/workflows/` release and updater CI.
+- `updater/` optional one-click updater helper (Windows PowerShell + macOS/Linux bash, native messaging host) and its test; `.github/workflows/` release and updater CI.
 - `src/ui/` React components; styles in `src/ui/styles/` (abstracts, base, components, layout, pages).
 - `docs/` human docs; keep them in sync with behavior.
 
