@@ -37,7 +37,7 @@ pnpm build      # production build in .output/chrome-mv3
 
 Install manually: open `chrome://extensions`, enable **Developer mode**, **Load unpacked**, select `.output/chrome-mv3`. Log in to Facebook in the same Chrome profile, then click the extension icon and **Open dashboard**.
 
-For users, the easiest way is the **Connecttech app** from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest) ([Windows](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-windows-x64-setup.exe), [Mac Apple silicon](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-mac-arm64.dmg), [Mac Intel](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-mac-x64.dmg), [Linux AppImage](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-linux-amd64.AppImage)): it either runs CAP in its own Chrome for Testing window with nothing to set up, or installs CAP for your own Chrome with one guided Load unpacked. Source in `launcher/` (Tauri).
+For users, the easiest way is the **Connecttech app**: download it from the newest [`app-v…` release](https://github.com/quyenlei/ConnecttechAutoPoster/releases?q=app-v&expanded=true) (`Connecttech-windows-x64-setup.exe`, `Connecttech-mac-arm64.dmg` for Apple silicon, `Connecttech-mac-x64.dmg` for Intel Macs, `Connecttech-linux-amd64.AppImage` / `.deb`). It either runs CAP in its own Chrome for Testing window with nothing to set up, or installs CAP for your own Chrome with one guided Load unpacked, and keeps CAP updated. Source in `launcher/` (Tauri); the app has its own version and changelog (`launcher/CHANGELOG.md`).
 
 ## Using it
 
