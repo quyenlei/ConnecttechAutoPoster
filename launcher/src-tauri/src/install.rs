@@ -108,6 +108,18 @@ pub(crate) fn extract(zip: &Path, to: &Path) -> std::io::Result<()> {
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        #[cfg(unix)]
+        if entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
+            // Symlinks inside an app bundle (Chrome for Testing on macOS). Only plain relative targets.
+            let mut target = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut target)?;
+            let link = Path::new(&target);
+            if link.is_absolute() || link.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return Err(std::io::Error::other("unsafe link in archive"));
+            }
+            std::os::unix::fs::symlink(link, &out)?;
+            continue;
+        }
         let mut file = std::fs::File::create(&out)?;
         std::io::copy(&mut entry, &mut file)?;
         #[cfg(unix)]
@@ -383,6 +395,30 @@ pub(crate) mod tests {
         assert_eq!(std::fs::read_to_string(to.join("sub/a.js")).unwrap(), "new");
         assert_eq!(installed_version(&to).as_deref(), Some("2.0.0"));
         assert!(!to.join("gone").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_keeps_relative_symlinks_and_refuses_escaping_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, link: &str| {
+            let path = dir.path().join(name);
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+            let opts = zip::write::SimpleFileOptions::default();
+            z.start_file("App.app/Versions/A/lib", opts).unwrap();
+            z.write_all(b"lib").unwrap();
+            z.add_symlink("App.app/Versions/Current", link, opts).unwrap();
+            z.finish().unwrap();
+            path
+        };
+        let good = make("good.zip", "A");
+        extract(&good, &dir.path().join("good")).unwrap();
+        let current = dir.path().join("good/App.app/Versions/Current");
+        assert!(std::fs::symlink_metadata(&current).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(current.join("lib")).unwrap(), "lib");
+
+        let bad = make("bad.zip", "../../../../etc");
+        assert!(extract(&bad, &dir.path().join("bad")).is_err());
     }
 
     #[test]
