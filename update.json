@@ -3,5 +3,17 @@
   "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v0.8.2",
   "zipUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v0.8.2/connecttech-auto-poster-0.8.2-chrome.zip",
   "sha256": "c082e97c8be5fd36943ad06e6bdb955453095522101c2d3f9e806c7a3b546bc9",
-  "publishedAt": "2026-11-11T09:48:02.444Z"
+  "publishedAt": "2026-11-11T09:48:02.444Z",
+  "app": {
+    "version": "1.0.0",
+    "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.0.0",
+    "downloads": {
+      "linux-amd64.AppImage": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-linux-amd64.AppImage",
+      "linux-amd64.deb": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-linux-amd64.deb",
+      "mac-arm64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-mac-arm64.dmg",
+      "mac-x64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-mac-x64.dmg",
+      "windows-x64-setup.exe": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-windows-x64-setup.exe"
+    },
+    "publishedAt": "2026-11-11T09:59:30.624Z"
+  }
 }
