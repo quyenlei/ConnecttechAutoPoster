@@ -80,6 +80,12 @@ if (dryRun) {
   process.exit(0);
 }
 
+// Publishing twice must be harmless (a re-run, or a merge that kept an already released version): stop quietly.
+if (ghApi([`repos/${repo}/releases/tags/${tag}`], undefined, true)) {
+  console.log(`${tag} is already released on ${repo}; nothing to publish.`);
+  process.exit(0);
+}
+
 const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
 writeFileSync(notesFile, notes);
 console.log(`Publishing ${tag} to ${repo}`);
