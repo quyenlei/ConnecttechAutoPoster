@@ -16,6 +16,8 @@ export interface Status {
   latest: string | null;
   appVersion: string;
   appUpdate: boolean;
+  /** Release page of the newest app version (`app.pageUrl` in update.json). */
+  appPageUrl: string | null;
   busy: boolean;
   error: string | null;
 }
@@ -26,7 +28,8 @@ export interface Progress {
   total: number | null;
 }
 
-export const RELEASES_URL = 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest';
+/** All releases; the app's own are tagged app-v<version> (CAP's v<version>). */
+export const RELEASES_URL = 'https://github.com/quyenlei/ConnecttechAutoPoster/releases';
 
 export const getStatus = () => invoke<Status>('get_status');
 export const setMode = (mode: Mode) => invoke<Status>('set_mode', { mode });

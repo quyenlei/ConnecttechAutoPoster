@@ -46,7 +46,7 @@ export function Ready({ status, onLaunch, onCheck, onGuide, onSettings }: Props)
       {status.appUpdate && (
         <p className="notice" role="status">
           Có bản app Connecttech mới.{' '}
-          <button className="button button--link" type="button" onClick={() => void openUrl(RELEASES_URL)}>
+          <button className="button button--link" type="button" onClick={() => void openUrl(status.appPageUrl ?? RELEASES_URL)}>
             Tải bộ cài mới
           </button>
         </p>

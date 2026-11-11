@@ -1,8 +1,8 @@
 //! Tauri commands and events: the UI calls these; progress and status changes come back as events.
 
 use crate::browser::{self, BrowserBuild};
-use crate::install::{fetch_release, install_release, installed_version};
-use crate::release::{is_newer, ErrorCode, Release, UPDATE_JSON_URL};
+use crate::install::{fetch_text, install_release, installed_version};
+use crate::release::{is_newer, parse_app_latest, parse_release, ErrorCode, Release, UPDATE_JSON_URL};
 use crate::state::{decide, extension_dir, load_settings, save_settings, Action, Mode, Settings};
 use serde::Serialize;
 use std::io::Write;
@@ -23,6 +23,8 @@ pub struct AppState {
     /// A CAP release or browser build waiting for the launcher's browser to close.
     pending: Mutex<Pending>,
     latest: Mutex<Option<String>>,
+    /// The app's own latest version and release page (`app` in update.json).
+    app_latest: Mutex<Option<(String, String)>>,
     error: Mutex<Option<String>>,
     busy: Mutex<bool>,
     /// A watcher waits for the launcher's browser to close (at most one).
@@ -50,6 +52,7 @@ pub struct Status {
     latest: Option<String>,
     app_version: String,
     app_update: bool,
+    app_page_url: Option<String>,
     busy: bool,
     error: Option<String>,
 }
@@ -76,6 +79,7 @@ impl AppState {
             child: Mutex::default(),
             pending: Mutex::default(),
             latest: Mutex::default(),
+            app_latest: Mutex::default(),
             error: Mutex::default(),
             busy: Mutex::new(false),
             watching: Mutex::new(false),
@@ -125,6 +129,7 @@ impl AppState {
         let pending = self.pending.lock().unwrap();
         let latest = self.latest.lock().unwrap().clone();
         let app_version = app.package_info().version.to_string();
+        let app_latest = self.app_latest.lock().unwrap().clone();
         Status {
             mode,
             platform_supported: platform().is_some(),
@@ -133,7 +138,8 @@ impl AppState {
             browser_running: self.running(),
             pending_update: pending.cap.as_ref().map(|r| r.version.clone()).or(pending.browser.as_ref().map(|_| String::new())),
             extension_path: ext.display().to_string(),
-            app_update: latest.as_deref().is_some_and(|l| is_newer(l, &app_version)),
+            app_update: app_latest.as_ref().is_some_and(|(v, _)| is_newer(v, &app_version)),
+            app_page_url: app_latest.map(|(_, page)| page),
             latest,
             app_version,
             busy: *self.busy.lock().unwrap(),
@@ -216,7 +222,9 @@ async fn apply_cap(app: &AppHandle, release: &Release, mode: Mode) -> Result<(),
 async fn check_and_apply(app: &AppHandle) -> Result<(), ErrorCode> {
     let state = app.state::<AppState>();
     let mode = state.mode().ok_or(ErrorCode::Manifest)?;
-    let release = fetch_release(&state.client, &state.update_json_url(), state.test).await?;
+    let body = fetch_text(&state.client, &state.update_json_url()).await?;
+    *state.app_latest.lock().unwrap() = parse_app_latest(&body);
+    let release = parse_release(&body, state.test)?;
     *state.latest.lock().unwrap() = Some(release.version.clone());
     let running = state.running();
     let installed = installed_version(&extension_dir(&state.data, mode));
