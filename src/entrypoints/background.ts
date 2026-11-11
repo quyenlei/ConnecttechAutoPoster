@@ -371,7 +371,7 @@ async function notifyRunEnd(previous: RunState['status'], state: RunState, campa
     if (!notice) return;
     await browser.notifications.create(`cap-run-${Date.now()}`, {
       type: 'basic',
-      iconUrl: browser.runtime.getURL('/icon-128.png'),
+      iconUrl: browser.runtime.getURL('/icon/128.png'),
       title: notice.title,
       message: notice.message,
     });

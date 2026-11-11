@@ -21,12 +21,22 @@ function icon(paths: string[]): SVGSVGElement {
 }
 
 const ICONS = {
-  logo: ['M22 2 11 13', 'M22 2 15 22l-4-9-9-4 20-7Z'],
   minimize: ['M5 12h14'],
   close: ['M6 6l12 12', 'M18 6 6 18'],
   expand: ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'],
   shrink: ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'],
 };
+
+/** The Connecttech logo, decorative (its button or title already carries the name). */
+function logo(className: string): HTMLImageElement {
+  const img = document.createElement('img');
+  img.className = className;
+  img.src = browser.runtime.getURL('/icon/48.png');
+  img.alt = '';
+  img.width = 48;
+  img.height = 48;
+  return img;
+}
 
 function iconButton(label: string, paths: string[]): HTMLButtonElement {
   const button = document.createElement('button');
@@ -63,7 +73,7 @@ export default defineContentScript({
     launcher.className = 'cap-chat__launcher';
     launcher.setAttribute('aria-label', 'Mở Connecttech Auto Poster');
     launcher.title = 'Connecttech Auto Poster';
-    launcher.append(icon(ICONS.logo));
+    launcher.append(logo('cap-chat__launcher-logo'));
 
     const box = document.createElement('section');
     box.className = 'cap-chat__window';
@@ -76,7 +86,7 @@ export default defineContentScript({
     title.className = 'cap-chat__title';
     const badge = document.createElement('span');
     badge.className = 'cap-chat__avatar';
-    badge.append(icon(ICONS.logo));
+    badge.append(logo('cap-chat__avatar-logo'));
     const name = document.createElement('span');
     name.textContent = 'Auto Poster';
     title.append(badge, name);
