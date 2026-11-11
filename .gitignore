@@ -6,3 +6,4 @@ stats.html
 .env*
 .DS_Store
 .e2e-profile
+docs/
