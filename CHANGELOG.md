@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-11
+
 ### Removed
 - **The script updater helper** (`updater/`, `cap-updater-*.zip`, `install.bat` / `install.command` / `install.sh`), the **Cập nhật ngay** button, `lib/updater.ts` and the `nativeMessaging` permission. The Connecttech app replaces them. Releases no longer attach `cap-updater-*.zip`, so the installer links in CAP 0.7.4–0.7.5 stop working. People who installed the helper: install the Connecttech app; the old helper folder and its Chrome registration can be deleted (they do nothing without the button). CI for the helper (`.github/workflows/updater.yml`, `e2e/updater_e2e.py`) is gone too.
 
