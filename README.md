@@ -39,8 +39,6 @@ Install manually: open `chrome://extensions`, enable **Developer mode**, **Load 
 
 For users, the easiest way is the **Connecttech app** from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest) ([Windows](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-windows-x64-setup.exe), [Mac Apple silicon](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-mac-arm64.dmg), [Mac Intel](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-mac-x64.dmg), [Linux AppImage](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest/download/Connecttech-linux-amd64.AppImage)): it either runs CAP in its own Chrome for Testing window with nothing to set up, or installs CAP for your own Chrome with one guided Load unpacked. Source in `launcher/` (Tauri).
 
-Script alternative (Windows, macOS or Linux): download `cap-updater-windows.zip`, `cap-updater-mac.zip` or `cap-updater-linux.zip` from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest), unzip it and run `install.bat`, `install.command` or `bash install.sh`. It installs CAP into a fixed folder to load with **Load unpacked**; later versions then install with **Cập nhật ngay** in CAP.
-
 ## Using it
 
 1. **Groups** tab: paste links such as `https://www.facebook.com/groups/example | My group`.

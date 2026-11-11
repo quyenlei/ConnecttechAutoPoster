@@ -41,7 +41,7 @@ export const onStatus = (handler: (status: Status) => void): Promise<UnlistenFn>
 export const onProgress = (handler: (progress: Progress) => void): Promise<UnlistenFn> =>
   listen<Progress>('progress', (event) => handler(event.payload));
 
-/** Same wording as CAP's updater messages (src/lib/updater.ts). */
+/** Error codes from src-tauri/src/release.rs (ErrorCode::as_str). */
 const MESSAGES: Record<string, string> = {
   network: 'Không tải được từ Internet. Kiểm tra mạng rồi thử lại.',
   manifest: 'Thông tin bản phát hành không hợp lệ, nên chưa cài.',

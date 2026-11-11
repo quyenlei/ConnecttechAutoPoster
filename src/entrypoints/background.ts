@@ -7,11 +7,10 @@ import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameReq
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { fillDefaultComments, withDefaultCampaigns } from '@/lib/defaults';
 import { fetchLatestRelease, shouldSelfReload, updateCheckDue } from '@/lib/update';
-import { isMissingHost, parsePingReply, parseUpdateReply, runsFromOtherFolder, updaterErrorMessage, UPDATER_HOST } from '@/lib/updater';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, safeScanItem, settingsItem, updateItem, updaterItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, safeScanItem, settingsItem, updateItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -193,52 +192,6 @@ async function checkForUpdate(force: boolean): Promise<CommandReply> {
   }
 }
 
-/**
- * Pings the optional updater helper (native messaging host, lib/updater.ts) and stores what it says. A missing
- * helper is normal: CAP then offers its installer. Starts the helper process only for this one message.
- */
-async function updaterStatus(): Promise<CommandReply> {
-  const checkedAt = Date.now();
-  try {
-    const ping = parsePingReply(await browser.runtime.sendNativeMessage(UPDATER_HOST, { type: 'ping' }));
-    if (!ping) throw new Error('Trình cập nhật trả lời không hợp lệ.');
-    await updaterItem.setValue({ checkedAt, installed: true, ...ping });
-    return { ok: true };
-  } catch (e) {
-    await updaterItem.setValue({ checkedAt, installed: false, version: null, folder: null });
-    const message = e instanceof Error ? e.message : String(e);
-    return isMissingHost(message) ? { ok: true } : { ok: false, error: message };
-  }
-}
-
-let installingUpdate = false;
-
-/**
- * "Cập nhật ngay": the helper downloads and checks the release and replaces CAP's folder; CAP then reloads itself
- * so Chrome loads the new files. CAP sends only `{ type: 'update' }`; the helper decides what to download.
- */
-async function installUpdate(): Promise<CommandReply> {
-  if (installingUpdate) return { ok: false, error: 'Đang cập nhật.' };
-  const running = browser.runtime.getManifest().version;
-  if (runsFromOtherFolder(await updaterItem.getValue(), running)) {
-    return { ok: false, error: 'CAP đang chạy từ một thư mục khác thư mục của trình cập nhật, nên không cập nhật được bằng nút này.' };
-  }
-  installingUpdate = true;
-  try {
-    const reply = parseUpdateReply(await browser.runtime.sendNativeMessage(UPDATER_HOST, { type: 'update' }));
-    if (!reply.ok) return { ok: false, error: updaterErrorMessage(reply.code) };
-    if (reply.version === running) return { ok: true };
-    // Let the reply reach the page before the extension restarts.
-    setTimeout(() => browser.runtime.reload(), 500);
-    return { ok: true };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: isMissingHost(message) ? 'Chưa cài trình cập nhật.' : `Không gọi được trình cập nhật: ${message}` };
-  } finally {
-    installingUpdate = false;
-  }
-}
-
 /** Turns every schedule off. Used after a checkpoint or block: the user must re-enable it. */
 async function disableAllSchedules(campaignId: string): Promise<void> {
   const list = await campaignsItem.getValue();
@@ -333,11 +286,6 @@ async function handleCommand(cmd: RunCommand, here?: { tabId: number; windowId: 
     }
     case 'cap/run/check-update':
       return checkForUpdate(true);
-    case 'cap/run/updater-status':
-      return updaterStatus();
-    case 'cap/run/install-update':
-      if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước khi cập nhật.' };
-      return installUpdate();
     case 'cap/run/reset': {
       if (isActive(run)) return { ok: false, error: 'Hãy dừng lượt chạy trước.' };
       await runItem.setValue(IDLE_RUN);

@@ -1,4 +1,0 @@
-# Windows scripts of the updater helper keep CRLF on every checkout (cmd.exe and PowerShell 5.1 expect it).
-updater/windows/* text eol=crlf
-# macOS scripts must stay LF.
-updater/mac/* text eol=lf

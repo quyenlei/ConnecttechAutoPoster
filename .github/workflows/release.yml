@@ -1,7 +1,7 @@
 # Release pipeline.
 # - Push a tag v<version> (matching package.json, with a CHANGELOG section): build the Connecttech app for Windows,
-#   macOS (Apple silicon and Intel) and Linux, then create the GitHub release with the CAP zip, the helper
-#   installers and the app installers, then point update.json on the `update` branch at it.
+#   macOS (Apple silicon and Intel) and Linux, then create the GitHub release with the CAP zip and the app
+#   installers, then point update.json on the `update` branch at it.
 # - Run it by hand (Actions -> Release -> Run workflow) on any branch: the same builds, uploaded as workflow
 #   artifacts, and `release.mjs --dry-run`. Nothing is published.
 # App installers carry fixed names, so https://github.com/<repo>/releases/latest/download/<name> always works:
