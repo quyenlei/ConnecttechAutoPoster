@@ -25,6 +25,15 @@ describe('run engine', () => {
     expect(s.queue).toHaveLength(7);
   });
 
+  it('captures safe mode at the start and advances a scan without treating it as a posted comment', () => {
+    const c = campaign({ mode: 'comment', safeMode: true, commentsPerGroup: 2, groupIds: ['g1'] });
+    const run = createRun(c, NOW);
+    expect(run.safeMode).toBe(true);
+    const result = applyOutcome(run, c, { kind: 'scanned', reason: 'Đã lưu bài' }, NOW);
+    expect(result.state).toMatchObject({ safeMode: true, attempted: 1, status: 'running', consecutiveFailures: 0 });
+    expect(createRun(campaign({ safeMode: true }), NOW).safeMode).toBe(false);
+  });
+
   it('counts each comment as a separate delayed attempt', () => {
     const c = campaign({ mode: 'comment', commentsPerGroup: 2, groupIds: ['g1', 'g2'] });
     const run = createRun(c, NOW);

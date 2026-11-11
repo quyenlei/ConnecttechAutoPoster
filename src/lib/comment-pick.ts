@@ -18,13 +18,31 @@ export interface FeedCandidate {
   mine: boolean;
   /** The post shows a comment editor, or a "Bình luận" button that opens one. */
   canComment: boolean;
+  /**
+   * Minute of the hour the post was made (0-59), from its full date. Tells reposts with the same text apart when
+   * there is no link. Only the minute: Facebook sometimes renders the date in another time zone (whole hours).
+   */
+  minute?: number | null;
 }
 
-export const feedKey = (groupId: string, fingerprint: string): string => `feed:${groupId}:${fingerprint}`;
+export const feedKey = (groupId: string, fingerprint: string, minute?: number | null): string =>
+  `feed:${groupId}:${fingerprint}${minute === undefined || minute === null ? '' : `@${minute}`}`;
 
-/** Keys stored in `commentedPosts` for a post: its link when known, and its fingerprint. */
-export function commentKeys(groupId: string, c: Pick<FeedCandidate, 'fingerprint' | 'url'>): string[] {
-  return [...(c.url ? [c.url] : []), ...(c.fingerprint ? [feedKey(groupId, c.fingerprint)] : [])];
+/**
+ * Keys stored in `commentedPosts` for a post: its link when known, otherwise its fingerprint with the minute it
+ * was posted. The fingerprint is only author + text, so a repost with the same text shares it.
+ */
+export function commentKeys(groupId: string, c: Pick<FeedCandidate, 'fingerprint' | 'url' | 'minute'>): string[] {
+  if (c.url) return [c.url];
+  return c.fingerprint ? [feedKey(groupId, c.fingerprint, c.minute)] : [];
+}
+
+/** Without a link or a minute the post cannot be told apart from a repost, so any key of its fingerprint counts. */
+function triedByFingerprint(c: FeedCandidate, tried: ReadonlySet<string>, groupId: string): boolean {
+  if (c.url || !c.fingerprint || (c.minute !== undefined && c.minute !== null)) return false;
+  const base = feedKey(groupId, c.fingerprint);
+  for (const key of tried) if (key === base || key.startsWith(`${base}@`)) return true;
+  return false;
 }
 
 /** History keys that belong to one group: its post links and its feed fingerprints. */
@@ -38,7 +56,7 @@ export function historyKeysForGroup(history: Record<string, number>, groupId: st
 export function judgeFeedPost(c: FeedCandidate, mode: FeedMode, tried: ReadonlySet<string>, groupId: string): SkipReason | null {
   const keys = commentKeys(groupId, c);
   if (keys.length === 0) return 'unidentified';
-  if (keys.some((key) => tried.has(key))) return 'tried';
+  if (keys.some((key) => tried.has(key)) || triedByFingerprint(c, tried, groupId)) return 'tried';
   if (c.mine) return 'mine';
   if (c.age && c.age.minAgeMs >= DAY_MS) return 'old';
   if (mode === 'recent' && (!c.age || c.age.maxAgeMs > DAY_MS)) return 'age-unknown';

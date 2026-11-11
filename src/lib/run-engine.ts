@@ -24,6 +24,7 @@ export function createRun(campaign: Campaign, now: number): RunState {
     status: 'running',
     startedAt: now,
     campaignId: campaign.id,
+    safeMode: campaign.mode === 'comment' && campaign.safeMode === true,
     queue,
     total: queue.length,
     nextAt: now,

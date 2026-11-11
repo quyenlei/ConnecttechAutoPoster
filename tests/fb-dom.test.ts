@@ -193,6 +193,23 @@ describe('feed posts', () => {
     expect(readFeedPost(first(), ctx()).age).toMatchObject({ minAgeMs: 60_000, maxAgeMs: 120_000, label: 'khoảng 1 phút trước' });
   });
 
+  it('reads the minute the post was made, which a whole-hour time zone shift does not change (seen live)', () => {
+    const at = (abs: string) => item(`${header('Lan')}<span id="rel">2 phút trước</span><span id="abs">${abs}</span>
+      <a role="link" aria-labelledby="rel" aria-describedby="abs" href="?__cft__[0]=x"></a><div dir="auto">Nội dung</div>${editor}`);
+    document.body.innerHTML = at('Thứ Năm, 5 Tháng 11, 2026 lúc 14:29');
+    expect(readFeedPost(first(), ctx()).minute).toBe(29);
+    document.body.innerHTML = at('Thứ Tư, 4 Tháng 11, 2026 lúc 23:29');
+    expect(readFeedPost(first(), ctx()).minute).toBe(29);
+    document.body.innerHTML = item(`${header('Lan', '<span>47 phút</span>')}<div dir="auto">Nội dung</div>${editor}`);
+    expect(readFeedPost(first(), ctx()).minute).toBeNull();
+  });
+
+  it('does not take the minute from a comment', () => {
+    document.body.innerHTML = item(`${header('Lan')}<div dir="auto">Bài chính</div><div role="button" aria-label="Bình luận">Bình luận</div>
+      <div role="article" aria-label="Bình luận dưới tên Minh"><span id="c">Thứ Năm, 5 Tháng 11, 2026 lúc 14:12</span><a aria-describedby="c" href="?x">2 phút</a></div>`);
+    expect(readFeedPost(first(), ctx()).minute).toBeNull();
+  });
+
   it('uses structured times for a post with a known link', () => {
     document.body.innerHTML = item(`${header('Lan')}<a href="https://www.facebook.com/groups/abc/posts/9/">x</a><div dir="auto">Nội dung</div>`);
     const structured = new Map([['https://www.facebook.com/groups/abc/posts/9/', now - 5 * 60_000]]);

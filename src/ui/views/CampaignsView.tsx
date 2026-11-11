@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, recommendDelay } from '@/lib/delay';
-import { withDefaultCampaigns } from '@/lib/defaults';
+import { DEFAULT_CAMPAIGN_IDS, withDefaultCampaigns } from '@/lib/defaults';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
@@ -8,7 +8,7 @@ import { DEFAULT_GROUP_BREAK, DEFAULT_SAFETY_BREAK, LIMITS } from '@/lib/limits'
 import { isActive } from '@/lib/run-engine';
 import { nextOccurrence, normalizeTimes, parseTime, validateTimes } from '@/lib/schedule';
 import { hasUnknownPlaceholder } from '@/lib/template';
-import { campaignsItem, groupsItem, runItem } from '@/lib/storage';
+import { campaignsItem, groupsItem, runItem, safeScanItem } from '@/lib/storage';
 import type { Campaign } from '@/lib/types';
 import { useConfirm } from '../confirm';
 import { RUN_STATUS_LABEL } from '../labels';
@@ -46,6 +46,7 @@ export function CampaignsView() {
   const campaigns = useItem(campaignsItem) ?? [];
   const groups = useItem(groupsItem) ?? [];
   const run = useItem(runItem);
+  const safeScan = useItem(safeScanItem);
   const [draft, setDraft] = useState<Campaign | null>(null);
   const [groupQuery, setGroupQuery] = useState('');
   const [message, setMessage] = useState<{ text: string; danger: boolean } | null>(null);
@@ -150,14 +151,21 @@ export function CampaignsView() {
   /** Adds the two ready-made campaigns (fast comments, posting) on every saved group, unless they exist already. */
   async function addDefaults() {
     const result = withDefaultCampaigns(await campaignsItem.getValue(), await groupsItem.getValue(), Date.now());
-    if (result.added === 0) {
+    if (result.added === 0 && !result.filled) {
       setMessage({ text: 'Hai chiến dịch mặc định đã có sẵn trong danh sách.', danger: false });
       return;
     }
     await campaignsItem.setValue(result.campaigns);
-    const first = result.campaigns[result.campaigns.length - result.added];
+    const first = result.added > 0
+      ? result.campaigns[result.campaigns.length - result.added]
+      : result.campaigns.find((c) => c.id === DEFAULT_CAMPAIGN_IDS.comment);
     if (first) await select(first); // asks first when the open campaign has unsaved changes
-    setMessage({ text: `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm. Hãy viết nội dung rồi lưu trước khi chạy.`, danger: false });
+    const parts = [
+      result.added > 0 ? `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm.` : '',
+      result.filled || result.added > 0 ? '"Bình luận nhanh" có sẵn bình luận mẫu về Connecttech.' : '',
+      'Hãy xem lại nội dung và nhóm rồi lưu trước khi chạy.',
+    ];
+    setMessage({ text: parts.filter(Boolean).join(' '), danger: false });
   }
 
   async function save(): Promise<Campaign | null> {
@@ -183,12 +191,13 @@ export function CampaignsView() {
       setMessage({ text: imageProblem, danger: true });
       return null;
     }
-    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, groupBreak: _groupBreak, ...base } = draft;
+    const { images: _images, removeLinkPreview: _preview, commentNewestPosts: _newest, safeMode: _safeMode, groupBreak: _groupBreak, ...base } = draft;
     const clean: Campaign = {
       ...base,
       // Images and the link preview option only apply to post campaigns.
       ...(isPost && images.length > 0 ? { images } : {}),
       ...(isPost && draft.removeLinkPreview ? { removeLinkPreview: true } : {}),
+      ...(!isPost && draft.safeMode ? { safeMode: true } : {}),
       ...(!isPost && draft.commentNewestPosts ? { commentNewestPosts: true } : {}),
       ...(!isPost ? { groupBreak: clampGroupBreak(draft.groupBreak) } : {}),
       name: draft.name.trim() || 'Chiến dịch chưa đặt tên',
@@ -210,11 +219,11 @@ export function CampaignsView() {
 
   async function launch() {
     if (!draft) return;
-    if (!(await confirm(draft.mode === 'comment' ? `Bắt đầu bình luận tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`, { okLabel: 'Bắt đầu chạy' }))) return;
+    if (!(await confirm(draft.mode === 'comment' ? `Bắt đầu ${draft.safeMode ? 'chỉ quét, không gửi bình luận' : 'bình luận'} tối đa ${draft.commentsPerGroup} bài trong mỗi nhóm đã chọn? Lượt đầu bắt đầu ngay.` : `Bắt đầu đăng vào ${draft.groupIds.length} nhóm ngay bây giờ? Bài đầu tiên sẽ được đăng ngay.`, { okLabel: 'Bắt đầu chạy' }))) return;
     const c = await save();
     if (!c) return;
     const reply = await sendCommand({ type: 'cap/run/start', campaignId: c.id });
-    setMessage(reply.ok ? { text: draft.mode === 'comment' ? 'Đã bắt đầu chiến dịch bình luận.' : 'Đã bắt đầu chạy. Bài đầu tiên sẽ được đăng ngay.', danger: false } : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
+    setMessage(reply.ok ? { text: draft.mode === 'comment' ? (draft.safeMode ? 'Đã bắt đầu quét bài ở Safe Mode.' : 'Đã bắt đầu chiến dịch bình luận.') : 'Đã bắt đầu chạy. Bài đầu tiên sẽ được đăng ngay.', danger: false } : { text: reply.error ?? 'Không thể bắt đầu.', danger: true });
   }
 
   async function remove(id: string, name: string) {
@@ -238,7 +247,8 @@ export function CampaignsView() {
           {campaigns.map((c) => (
             <li key={c.id} className="campaigns__list-item">
               <button className="campaigns__list-name" type="button" aria-current={draft?.id === c.id} onClick={() => void select(c)}>
-                {c.name}
+                <span className="campaigns__list-title">{c.name}</span>
+                <span className="campaigns__list-meta">{c.mode === 'comment' ? (c.safeMode ? 'Safe Mode' : 'Bình luận') : 'Đăng bài'} · {c.groupIds.length} nhóm</span>
               </button>
               <button className="button button--small button--danger" type="button" onClick={() => remove(c.id, c.name)} aria-label={`Xóa ${c.name}`} disabled={busy && run?.campaignId === c.id}>
                 Xóa
@@ -249,7 +259,8 @@ export function CampaignsView() {
       </section>
 
       {draft ? (
-        <section className="card" aria-label="Trình soạn chiến dịch">
+        <section className="card campaigns__editor" aria-label="Trình soạn chiến dịch">
+          <div className="campaigns__editor-head"><div><h2>Thiết lập chiến dịch</h2><p>Chuẩn bị nội dung, chọn nhóm và thời gian chạy.</p></div><span className="campaigns__editor-mode">{draft.mode === 'comment' ? 'Bình luận' : 'Đăng bài'}</span></div>
           <div className="card__body">
             <div className="field">
               <label className="field__label" htmlFor="c-name">Tên chiến dịch</label>
@@ -263,6 +274,12 @@ export function CampaignsView() {
                 <option value="comment">Bình luận bài viết trong nhóm</option>
               </select>
             </div>
+            {draft.mode === 'comment' && (
+              <div className="campaigns__section">
+                <label className="campaigns__group"><input type="checkbox" checked={draft.safeMode === true} onChange={(e) => patch({ safeMode: e.target.checked })} /> <strong>Safe Mode — chỉ lấy bài, không bình luận</strong></label>
+                <p className="field__hint">Quét và lưu các bài phù hợp ở bên dưới. Không nhập hoặc gửi bình luận, không đánh dấu bài là đã bình luận. Mỗi lượt quét mới thay thế kết quả Safe Mode trước đó.</p>
+              </div>
+            )}
             {draft.mode === 'comment' && (
               <div className="field">
                 <label className="field__label" htmlFor="c-comment-limit">Số bài tối đa mỗi nhóm</label>
@@ -279,8 +296,21 @@ export function CampaignsView() {
               </div>
             )}
 
+            {draft.mode === 'comment' && draft.safeMode && safeScan?.campaignId === draft.id && (
+              <div className="campaigns__section">
+                <h3>Bài đã tìm thấy ({safeScan.posts.length})</h3>
+                {safeScan.posts.length === 0 ? <p className="field__hint">Chưa tìm thấy bài nào trong lượt quét này.</p> : (
+                  <ul className="safe-scan__list">{safeScan.posts.map((post) => <li className="safe-scan__post" key={post.slot}>
+                    <strong>{post.groupName}</strong><span className="field__hint">{[post.author, post.age].filter(Boolean).join(' · ')}</span>
+                    <p>{post.text || 'Không đọc được nội dung bài viết.'}</p>
+                    {post.url ? <a href={post.url} target="_blank" rel="noreferrer noopener">Mở bài trên Facebook</a> : <span className="field__hint">Không lấy được liên kết bài viết.</span>}
+                  </li>)}</ul>
+                )}
+              </div>
+            )}
             <div className="campaigns__variation">
               <h3>{draft.mode === 'comment' ? 'Nội dung bình luận' : 'Nội dung bài đăng'}</h3>
+              {draft.mode === 'comment' && draft.safeMode && <p className="field__hint">Không bắt buộc khi bật Safe Mode; nội dung này sẽ không được gửi.</p>}
               {draft.variations.map((v, i) => (
                 <div className="field" key={i}>
                   <label className="field__label" htmlFor={`c-var-${i}`}>Phiên bản {i + 1}</label>

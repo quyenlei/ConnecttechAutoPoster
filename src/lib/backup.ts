@@ -172,6 +172,7 @@ function parseCampaign(raw: unknown, idMap: Map<string, string>, fallbackTime: n
   };
   if (raw.mode === 'comment') {
     campaign.mode = 'comment';
+    if (raw.safeMode === true) campaign.safeMode = true;
     campaign.commentsPerGroup = clampInt(raw.commentsPerGroup, 1, LIMITS.maxCommentsPerGroup, 1);
     if (isObject(raw.groupBreak)) {
       campaign.groupBreak = clampGroupBreak({ minSec: Number(raw.groupBreak.minSec), maxSec: Number(raw.groupBreak.maxSec) });

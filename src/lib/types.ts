@@ -42,6 +42,8 @@ export interface Campaign {
   commentsPerGroup?: number;
   /** Comment campaigns only, opt-in. Comment on the newest posts of the feed without knowing their age. */
   commentNewestPosts?: boolean;
+  /** Read matching posts without submitting comments. */
+  safeMode?: boolean;
   /** One or more post texts; they rotate across groups. */
   variations: string[];
   groupIds: string[];
@@ -76,6 +78,8 @@ export interface RunState {
   status: RunStatus;
   campaignId: string | null;
   startedAt?: number;
+  /** Captured at start so a resumed read-only run cannot submit comments. */
+  safeMode?: boolean;
   /** Group ids still to be processed, in order. */
   queue: string[];
   total: number;
@@ -124,7 +128,25 @@ export interface Settings {
   notifyOnFinish: boolean;
 }
 
+export interface SafeScanPost {
+  slot: string;
+  keys: string[];
+  groupId: string;
+  groupName: string;
+  url: string | null;
+  author: string;
+  text: string;
+  age: string | null;
+}
+
+export interface SafeScanResults {
+  startedAt: number;
+  campaignId: string;
+  posts: SafeScanPost[];
+}
+
 export type PostOutcome =
+  | { kind: 'scanned'; reason: string }
   | { kind: 'posted' }
   /** Submitted, but the group needs admin approval before the post is visible. */
   | { kind: 'pending' }

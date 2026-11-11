@@ -5,12 +5,12 @@ import { LIMITS } from '@/lib/limits';
 import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
-import { withDefaultCampaigns } from '@/lib/defaults';
+import { fillDefaultComments, withDefaultCampaigns } from '@/lib/defaults';
 import { parseLatestRelease, UPDATE_API_URL, updateCheckDue } from '@/lib/update';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
-import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, settingsItem, updateItem } from '@/lib/storage';
+import { appendLog, campaignsItem, commentLockItem, commentTabItem, groupsItem, joinedScanItem, logsItem, runItem, scheduleCheckItem, commentedPostsItem, safeScanItem, settingsItem, updateItem } from '@/lib/storage';
 import { newId } from '@/lib/id';
 import { canonicalGroupUrl, hasPlaceholderName, newestPostsGroupUrl, withReadName } from '@/lib/groups';
 import type { Campaign, Group, LogStatus, PostOutcome, RunState } from '@/lib/types';
@@ -37,8 +37,16 @@ export default defineBackground(() => {
     void scheduleCheckItem.setValue(Date.now()).then(rescheduleAlarm);
   });
 
-  // First install: start with the two ready-made campaigns. Nothing runs until the user writes their text.
+  // First install: start with the two ready-made campaigns. The post campaign cannot run until the user writes its text.
   browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'update') {
+      // A default comment campaign made by an older version has empty text: give it the sample comments.
+      void (async () => {
+        const result = fillDefaultComments(await campaignsItem.getValue());
+        if (result.filled) await campaignsItem.setValue(result.campaigns);
+      })();
+      return;
+    }
     if (reason !== 'install') return;
     void (async () => {
       if ((await campaignsItem.getValue()).length > 0) return;
@@ -190,9 +198,10 @@ async function startRun(campaignId: string, here?: { tabId: number; windowId: nu
   const state = createRun(campaign, Date.now());
   await closeCommentWindow();
   await commentTabItem.setValue(here ? { ...here, groupId: '', runStartedAt: state.startedAt ?? 0, keepOpen: true } : null);
+  if (campaign.mode === 'comment' && campaign.safeMode) await safeScanItem.setValue({ startedAt: state.startedAt ?? 0, campaignId: campaign.id, posts: [] });
   await runItem.setValue(state);
   await log(campaign.id, null, 'info', campaign.mode === 'comment'
-    ? `Đã bắt đầu chạy: tối đa ${state.total} lượt bình luận trên ${campaign.groupIds.length} nhóm.`
+    ? `Đã bắt đầu ${campaign.safeMode ? "Safe Mode: quét" : "chạy: tối đa"} ${state.total} ${campaign.safeMode ? "bài" : "lượt bình luận"} trên ${campaign.groupIds.length} nhóm.`
     : `Đã bắt đầu chạy: ${state.total} nhóm.`);
   void runStep(); // first post goes out immediately
   return { ok: true };
@@ -222,6 +231,7 @@ async function handleCommand(cmd: RunCommand, here?: { tabId: number; windowId: 
       if (run.status !== 'stopped') return { ok: false, error: 'Chỉ chạy tiếp được lượt đã dừng.' };
       const campaign = await currentCampaign(run);
       if (!campaign) return { ok: false, error: 'Không tìm thấy chiến dịch.' };
+      if (Boolean(run.safeMode) !== (campaign.mode === 'comment' && campaign.safeMode === true)) return { ok: false, error: 'Chế độ Safe Mode đã thay đổi. Hãy bắt đầu một lượt chạy mới.' };
       const problem = validateCampaign(campaign, await campaignsItem.getValue()) ?? (await commentLockProblem(campaign));
       if (problem) return { ok: false, error: problem };
       const next = continueRun(run, campaign, await logsItem.getValue(), Date.now());
@@ -267,7 +277,7 @@ function validateCampaign(c: Campaign, all: Campaign[]): string | null {
   if (c.groupIds.length === 0) return 'Hãy chọn ít nhất một nhóm.';
   if (c.groupIds.length > LIMITS.maxGroupsPerCampaign) return `Mỗi chiến dịch tối đa ${LIMITS.maxGroupsPerCampaign} nhóm.`;
   if (c.mode === 'comment' && (!Number.isInteger(c.commentsPerGroup) || (c.commentsPerGroup ?? 0) < 1 || (c.commentsPerGroup ?? 0) > LIMITS.maxCommentsPerGroup)) return 'Số bài mỗi nhóm không hợp lệ.';
-  if (!c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
+  if (!(c.mode === 'comment' && c.safeMode) && !c.variations.some((v) => v.trim())) return 'Hãy viết nội dung bài đăng trước.';
   if (c.variations.some((v) => v.length > LIMITS.maxPostLength)) return 'Bài đăng quá dài.';
   if (c.commentNewestPosts && (c.mode !== 'comment' || (c.commentsPerGroup ?? 0) > LIMITS.maxNewestPostComments)) return `Chế độ bài mới nhất chỉ dùng cho chiến dịch bình luận, tối đa ${LIMITS.maxNewestPostComments} bài mỗi nhóm.`;
   if (c.mode !== 'comment' && c.images?.length) {
@@ -299,6 +309,15 @@ async function runStep(): Promise<void> {
     const groupId = run.queue[0];
     if (!campaign || !groupId) {
       await runItem.setValue({ ...run, status: 'halted', reason: 'Thiếu chiến dịch hoặc nhóm.', nextAt: null });
+      return;
+    }
+    // A read-only run must never become a posting run, even if its campaign changes while stopped.
+    if (run.safeMode && (campaign.mode !== 'comment' || !campaign.safeMode)) {
+      const reason = 'Chế độ Safe Mode đã thay đổi. Hãy bắt đầu một lượt chạy mới.';
+      await runItem.setValue({ ...run, status: 'halted', reason, nextAt: null });
+      await log(campaign.id, null, 'info', reason);
+      await closeCommentWindow();
+      await schedule(null);
       return;
     }
     const group = (await groupsItem.getValue()).find((g) => g.id === groupId);
@@ -550,7 +569,9 @@ async function commentInGroup(group: Group, text: string, run: RunState, campaig
   try {
     const slot = `slot:${run.campaignId}:${run.startedAt}:${run.attempted}`;
     const history = Object.fromEntries(Object.entries(await commentedPostsItem.getValue()).filter(([key, at]) => !key.startsWith('slot:') || at > Date.now() - 7 * 86400_000));
-    if (history[slot]) return { kind: 'skipped', reason: 'Lượt bình luận đã được xử lý trước khi gián đoạn.' };
+    const scan = run.safeMode ? await safeScanItem.getValue() : null;
+    if (run.safeMode && scan && scan.startedAt === run.startedAt && scan.posts.some((post) => post.slot === slot)) return { kind: 'scanned', reason: 'Bài đã được lưu trước khi lượt quét bị gián đoạn.' };
+    if (!run.safeMode && history[slot]) return { kind: 'skipped', reason: 'Lượt bình luận đã được xử lý trước khi gián đoạn.' };
     const tabId = await openGroupFeed(group, run);
     if (hasPlaceholderName(group)) {
       const found = await askGroupName(tabId);
@@ -561,7 +582,7 @@ async function commentInGroup(group: Group, text: string, run: RunState, campaig
       type: 'cap/feed-pick',
       groupId: group.id,
       mode: campaign.commentNewestPosts ? 'newest' : 'recent',
-      tried: historyKeysForGroup(history, group.id),
+      tried: [...historyKeysForGroup(history, group.id), ...(scan && scan.startedAt === run.startedAt ? scan.posts.filter((post) => post.groupId === group.id).flatMap((post) => post.keys) : [])],
       ownTexts: campaign.variations.map((v) => v.trim()).filter(Boolean),
     };
     const pick = (await withTimeout(sendWithRetry(tabId, pickRequest), LIMITS.feedScanTimeoutMs + 30_000, 'Hết thời gian quét bài trong nhóm.')) as FeedPickReply;
@@ -572,6 +593,12 @@ async function commentInGroup(group: Group, text: string, run: RunState, campaig
     }
     const latest = await runItem.getValue();
     if (latest.status !== 'running' || latest.startedAt !== run.startedAt || latest.attempted !== run.attempted) return { kind: 'skipped', reason: 'Lượt chạy đã thay đổi.' };
+    if (run.safeMode) {
+      const current = await safeScanItem.getValue();
+      if (!current || current.startedAt !== run.startedAt || current.campaignId !== campaign.id) return { kind: 'failed', reason: 'Không tìm thấy kết quả lượt quét hiện tại.' };
+      await safeScanItem.setValue({ ...current, posts: [...current.posts, { slot, keys: pick.keys, groupId: group.id, groupName: group.name, url: pick.post?.url ?? null, author: pick.post?.author ?? '', text: pick.post?.text ?? '', age: pick.post?.age ?? null }] });
+      return { kind: 'scanned', reason: 'Safe Mode: đã lưu bài phù hợp, không gửi bình luận.' };
+    }
     const now = Date.now();
     await commentedPostsItem.setValue({ ...history, ...Object.fromEntries(pick.keys.map((key) => [key, now])), [slot]: now });
     if (pick.diagnostic) await log(campaign.id, group, 'info', pick.diagnostic);
@@ -636,9 +663,10 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 }
 
 const toStatus = (o: PostOutcome): LogStatus =>
-  o.kind === 'posted' ? 'posted' : o.kind === 'pending' ? 'pending' : o.kind === 'skipped' ? 'skipped' : 'failed';
+  o.kind === 'scanned' ? 'info' : o.kind === 'posted' ? 'posted' : o.kind === 'pending' ? 'pending' : o.kind === 'skipped' ? 'skipped' : 'failed';
 
 const describe = (o: PostOutcome, mode?: Campaign['mode']): string => {
+  if (o.kind === 'scanned') return o.reason;
   if (o.kind === 'posted') return mode === 'comment' ? 'Đã gửi bình luận.' : 'Đã gửi bài đăng.';
   if (o.kind === 'pending') return 'Đã gửi bài, đang chờ quản trị viên nhóm phê duyệt.';
   return o.reason;

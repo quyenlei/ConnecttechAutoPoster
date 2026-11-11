@@ -123,6 +123,7 @@ const asCandidate = (post: FeedPost): FeedCandidate => ({
   age: post.age,
   mine: post.mine,
   canComment: post.editor !== null || post.commentAction !== null,
+  minute: post.minute,
 });
 
 /** The post chosen by the last scan. It stays in this page so the comment goes to exactly that element. */
@@ -231,12 +232,12 @@ async function pickFeedPost(request: FeedPickRequest): Promise<FeedPickReply> {
       reason = judgeFeedPost(asCandidate(post), request.mode, tried, request.groupId);
     }
     reasons.push(reason);
-    trace.push(`#${index}:${post.fingerprint ?? '-'}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
+    trace.push(`#${index}:${post.fingerprint ?? '-'}${post.minute === null ? '' : `@${post.minute}`}:${reason ?? 'ok'}:${post.age?.label ?? '?'}`);
     const id = post.fingerprint ?? post.url;
     if (reason === null && id) {
       picked = { fingerprint: id, post };
       const age = post.age ? `, đăng khoảng ${Math.max(1, Math.round(post.age.minAgeMs / 60_000))} phút trước${post.age.label ? ` (nhãn: "${post.age.label}")` : ''}` : ', không rõ giờ đăng';
-      return { fingerprint: id, keys: commentKeys(request.groupId, post), trace, diagnostic: `Chọn bài thứ ${scan.posts} trong feed${age}.` };
+      return { fingerprint: id, keys: commentKeys(request.groupId, post), post: { url: post.url, author: post.author, text: post.body.slice(0, 1000), age: post.age?.label ?? null }, trace, diagnostic: `Chọn bài thứ ${scan.posts} trong feed${age}.` };
     }
     counts[reason ?? 'unidentified']++;
   }

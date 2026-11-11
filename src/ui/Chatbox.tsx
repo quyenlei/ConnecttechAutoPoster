@@ -40,7 +40,7 @@ export function Chatbox() {
     const campaign = campaigns.find((c) => c.id === campaignId);
     if (!campaign) return;
     const what = campaign.mode === 'comment'
-      ? `bình luận tối đa ${campaign.commentsPerGroup ?? 1} bài trong mỗi nhóm đã chọn`
+      ? `${campaign.safeMode ? 'chỉ quét, không bình luận' : 'bình luận'} tối đa ${campaign.commentsPerGroup ?? 1} bài trong mỗi nhóm đã chọn`
       : `đăng vào ${campaign.groupIds.length} nhóm, bài đầu tiên đăng ngay`;
     const question = `Bắt đầu "${campaign.name}": ${what}? CAP chạy ngay trên tab này: tab sẽ tự chuyển qua từng nhóm và không đóng khi xong.`;
     if (!(await confirm(question, { okLabel: 'Bắt đầu chạy' }))) return;
@@ -52,6 +52,7 @@ export function Chatbox() {
     <main className="chatbox__app">
       <UpdateNotice compact />
       <RunBar compact />
+      <div className="chatbox__feed-title">Hoạt động gần đây</div>
       <ol className="chatbox__feed" ref={feedRef} aria-label="Hoạt động gần đây" aria-live="polite">
         {recent.length === 0 && <li className="chatbox__empty">Chưa có hoạt động nào. Chọn chiến dịch bên dưới rồi bấm Chạy.</li>}
         {recent.map((entry) => (

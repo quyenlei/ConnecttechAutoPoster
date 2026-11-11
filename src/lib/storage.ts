@@ -3,7 +3,7 @@ import { LIMITS } from './limits';
 import type { BackupData } from './backup';
 import { IDLE_RUN, isActive } from './run-engine';
 import type { UpdateState } from './update';
-import type { Campaign, CommentTab, Group, JoinedScan, LogEntry, RunState, Settings } from './types';
+import type { Campaign, CommentTab, Group, JoinedScan, LogEntry, RunState, SafeScanResults, Settings } from './types';
 
 /** All data stays in chrome.storage.local on this device. Nothing is sent anywhere. */
 export const groupsItem = storage.defineItem<Group[]>('local:groups', { fallback: [] });
@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS: Settings = { notifyOnFinish: false };
 export const settingsItem = storage.defineItem<Settings>('local:settings', { fallback: DEFAULT_SETTINGS });
 /** Reserved before submitting so an interrupted run cannot retry the same post. */
 export const commentedPostsItem = storage.defineItem<Record<string, number>>('local:commentedPosts', { fallback: {} });
+/** Latest read-only scan; separate from the protection against repeated comments. */
+export const safeScanItem = storage.defineItem<SafeScanResults | null>('local:safeScan', { fallback: null });
 /** Window of the running comment campaign. Never exported in a backup. */
 export const commentTabItem = storage.defineItem<CommentTab | null>('local:commentTab', { fallback: null });
 /** Preview of the user's joined groups. Never exported in a backup. */
