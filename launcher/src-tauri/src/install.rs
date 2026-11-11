@@ -193,7 +193,15 @@ fn copy_one(source: &Path, target: &Path) -> std::io::Result<()> {
     if target.exists() {
         make_writable(target);
     }
-    std::fs::copy(source, target).map(|_| ())
+    // Write beside it, then rename over it: the old file stays whole until the new one is complete.
+    let mut tmp = target.as_os_str().to_owned();
+    tmp.push(".capnew");
+    let tmp = PathBuf::from(tmp);
+    if let Err(e) = std::fs::copy(source, &tmp).and_then(|_| std::fs::rename(&tmp, target)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 fn make_writable(path: &Path) {
@@ -419,6 +427,25 @@ pub(crate) mod tests {
 
         let bad = make("bad.zip", "../../../../etc");
         assert!(extract(&bad, &dir.path().join("bad")).is_err());
+    }
+
+    /// A file is replaced by writing a temporary file and renaming it over the old one, never by rewriting the old
+    /// file in place: a full disk or crash mid-copy then leaves the old, loadable file. A hard link shows the
+    /// difference: an in-place write would change the linked file too.
+    #[test]
+    fn replace_folder_never_rewrites_a_file_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("from"), dir.path().join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::write(from.join("background.js"), "new").unwrap();
+        std::fs::write(dir.path().join("elsewhere.js"), "old").unwrap();
+        std::fs::hard_link(dir.path().join("elsewhere.js"), to.join("background.js")).unwrap();
+
+        replace_folder(&from, &to).unwrap();
+        assert_eq!(std::fs::read_to_string(to.join("background.js")).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(dir.path().join("elsewhere.js")).unwrap(), "old");
+        assert!(files_in(&to).unwrap().iter().all(|p| !p.to_string_lossy().ends_with(".capnew")), "no temp files left");
     }
 
     #[test]

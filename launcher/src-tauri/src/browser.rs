@@ -116,6 +116,17 @@ pub async fn install_browser(
     result
 }
 
+/// True when any process runs a program from `<data>/browser` (the launcher's browser, whoever started it).
+pub fn browser_process_running(data: &Path) -> bool {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    // Compare with both spellings of the folder (macOS reports /var/... for /private/var/...).
+    let root = data.join("browser");
+    let real = root.canonicalize().unwrap_or_else(|_| root.clone());
+    let Ok(mut system) = System::new() else { return false };
+    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_exe(UpdateKind::Always));
+    system.processes().values().any(|p| p.exe().is_some_and(|exe| exe.starts_with(&root) || exe.starts_with(&real)))
+}
+
 /// The exact arguments the browser is started with.
 pub fn launch_args(data: &Path) -> Vec<String> {
     vec![
@@ -211,6 +222,30 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             assert_ne!(std::fs::metadata(&exe).unwrap().permissions().mode() & 0o111, 0, "executable");
         }
+    }
+
+    /// The launcher may have been restarted while its browser stayed open: find that browser by where its program
+    /// lives (inside `<data>/browser`), without reading the profile.
+    #[cfg(unix)]
+    #[test]
+    fn notices_a_browser_started_by_an_earlier_launcher() {
+        let data = tempfile::tempdir().unwrap();
+        let bin = data.path().join("browser/158.0.0.1/chrome-linux64");
+        std::fs::create_dir_all(&bin).unwrap();
+        let program = bin.join("chrome");
+        // A freshly built program (macOS kills copies of signed system binaries such as /bin/sleep).
+        let source = data.path().join("wait.c");
+        std::fs::write(&source, "#include <unistd.h>\nint main(void){sleep(30);return 0;}\n").unwrap();
+        assert!(std::process::Command::new("cc").arg(&source).arg("-o").arg(&program).status().unwrap().success());
+        assert!(!browser_process_running(data.path()));
+
+        let mut child = std::process::Command::new(&program).arg("30").spawn().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let seen = browser_process_running(data.path());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(seen, "a browser running from <data>/browser is noticed");
+        assert!(!browser_process_running(data.path()));
     }
 
     #[tokio::test]

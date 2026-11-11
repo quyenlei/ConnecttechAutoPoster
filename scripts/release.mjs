@@ -84,7 +84,9 @@ const manifest = {
 
 // Desktop app installers (launcher/), downloaded into .output/launcher/ by the release workflow.
 const launcherDir = join(root, '.output', 'launcher');
-const launcher = existsSync(launcherDir) ? readdirSync(launcherDir).map((name) => join(launcherDir, name)) : [];
+// upload-artifact keeps bundle subfolders (dmg/, nsis/, appimage/, deb/): attach the files inside, not the folders.
+const filesIn = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesIn(join(dir, e.name)) : [join(dir, e.name)]));
+const launcher = existsSync(launcherDir) ? filesIn(launcherDir) : [];
 
 if (dryRun) {
   console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${[zip, ...installers, ...launcher].join(', ')}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);

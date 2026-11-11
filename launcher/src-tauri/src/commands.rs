@@ -25,6 +25,8 @@ pub struct AppState {
     latest: Mutex<Option<String>>,
     error: Mutex<Option<String>>,
     busy: Mutex<bool>,
+    /// A watcher waits for the launcher's browser to close (at most one).
+    watching: Mutex<bool>,
     /// Tests against a local mock only (CAP_LAUNCHER_TEST=1): allows http://127.0.0.1 and other URLs.
     test: bool,
 }
@@ -76,6 +78,7 @@ impl AppState {
             latest: Mutex::default(),
             error: Mutex::default(),
             busy: Mutex::new(false),
+            watching: Mutex::new(false),
             test,
         }
     }
@@ -84,16 +87,21 @@ impl AppState {
         self.settings.lock().unwrap().mode
     }
 
+    /// The launcher's browser is open: the one this session started, or one still open from an earlier session
+    /// (found by its program living in `<data>/browser`).
     fn running(&self) -> bool {
-        let mut child = self.child.lock().unwrap();
-        match child.as_mut().map(|c| c.try_wait()) {
-            Some(Ok(None)) => true,
-            Some(_) => {
-                *child = None;
-                false
+        let mine = {
+            let mut child = self.child.lock().unwrap();
+            match child.as_mut().map(|c| c.try_wait()) {
+                Some(Ok(None)) => true,
+                Some(_) => {
+                    *child = None;
+                    false
+                }
+                None => false,
             }
-            None => false,
-        }
+        };
+        mine || browser::browser_process_running(&self.data)
     }
 
     fn update_json_url(&self) -> String {
@@ -210,28 +218,42 @@ async fn check_and_apply(app: &AppHandle) -> Result<(), ErrorCode> {
     let mode = state.mode().ok_or(ErrorCode::Manifest)?;
     let release = fetch_release(&state.client, &state.update_json_url(), state.test).await?;
     *state.latest.lock().unwrap() = Some(release.version.clone());
-    {
-        let mut settings = state.settings.lock().unwrap();
-        settings.last_check = now();
-        let _ = save_settings(&state.data, &settings);
-    }
-    if mode == Mode::Browser {
-        let build = fetch_browser_build(&state).await?;
-        let have = browser::installed_browser_version(&state.data);
-        if have.as_deref() != Some(build.version.as_str()) {
-            if state.running() {
-                state.pending.lock().unwrap().browser = Some(build);
-            } else {
-                apply_browser(app, &build).await?;
-            }
-        }
-    }
+    let running = state.running();
     let installed = installed_version(&extension_dir(&state.data, mode));
-    match decide(mode, state.running(), installed.as_deref(), &release.version) {
+    match decide(mode, running, installed.as_deref(), &release.version) {
         Action::Apply => apply_cap(app, &release, mode).await?,
         Action::Defer => state.pending.lock().unwrap().cap = Some(release),
         Action::Nothing => {}
     }
+    if mode == Mode::Browser {
+        // A browser problem must not block CAP updates; it only fails the check when there is no browser yet.
+        let have = browser::installed_browser_version(&state.data);
+        let browser = async {
+            let build = fetch_browser_build(&state).await?;
+            if have.as_deref() != Some(build.version.as_str()) {
+                if running {
+                    state.pending.lock().unwrap().browser = Some(build);
+                } else {
+                    apply_browser(app, &build).await?;
+                }
+            }
+            Ok::<(), ErrorCode>(())
+        }
+        .await;
+        if let Err(code) = browser {
+            if have.is_none() {
+                return Err(code);
+            }
+            state.log(&format!("browser update: {}", code.as_str()));
+        }
+        if running {
+            watch_browser(app.clone());
+        }
+    }
+    // Only a check that went through counts; a failed one is retried by the next background round.
+    let mut settings = state.settings.lock().unwrap();
+    settings.last_check = now();
+    let _ = save_settings(&state.data, &settings);
     Ok(())
 }
 
@@ -242,13 +264,20 @@ async fn apply_pending(app: &AppHandle) -> Result<(), ErrorCode> {
         let mut pending = state.pending.lock().unwrap();
         (pending.cap.take(), pending.browser.take())
     };
+    let mut result = Ok(());
     if let Some(build) = build {
-        apply_browser(app, &build).await?;
+        if let Err(code) = apply_browser(app, &build).await {
+            state.pending.lock().unwrap().browser = Some(build);
+            result = Err(code);
+        }
     }
     if let Some(release) = cap {
-        apply_cap(app, &release, Mode::Browser).await?;
+        if let Err(code) = apply_cap(app, &release, Mode::Browser).await {
+            state.pending.lock().unwrap().cap = Some(release);
+            result = result.and(Err(code));
+        }
     }
-    Ok(())
+    result
 }
 
 #[tauri::command]
@@ -280,7 +309,9 @@ pub async fn launch_browser(app: AppHandle) -> Result<(), String> {
         if state.running() {
             return Ok(());
         }
-        apply_pending(&app).await?;
+        if let Err(code) = apply_pending(&app).await {
+            state.log(&format!("pending update: {}", code.as_str()));
+        }
         let version = browser::installed_browser_version(&state.data).ok_or(ErrorCode::Folder)?;
         let platform = platform().ok_or(ErrorCode::Manifest)?;
         let exe = browser::executable_path(&state.data.join("browser").join(version), platform);
@@ -297,6 +328,14 @@ pub async fn launch_browser(app: AppHandle) -> Result<(), String> {
 
 /// When the launcher's browser closes, apply any pending update and tell the UI.
 fn watch_browser(app: AppHandle) {
+    {
+        let state = app.state::<AppState>();
+        let mut watching = state.watching.lock().unwrap();
+        if *watching {
+            return;
+        }
+        *watching = true;
+    }
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -304,6 +343,7 @@ fn watch_browser(app: AppHandle) {
                 break;
             }
         }
+        *app.state::<AppState>().watching.lock().unwrap() = false;
         let has_pending = {
             let state = app.state::<AppState>();
             let pending = state.pending.lock().unwrap();
