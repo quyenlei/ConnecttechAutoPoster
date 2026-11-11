@@ -6,7 +6,7 @@ import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { fillDefaultComments, withDefaultCampaigns } from '@/lib/defaults';
-import { parseLatestRelease, UPDATE_API_URL, updateCheckDue } from '@/lib/update';
+import { fetchLatestRelease, updateCheckDue } from '@/lib/update';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
 import { dueOccurrences, isMissed, nextOccurrence, validateTimes } from '@/lib/schedule';
@@ -145,7 +145,8 @@ let checkingUpdate = false;
 /**
  * Reads the latest release of the public CAP repository and stores it in `updateItem`. Automatic checks
  * run at most once a day (the hourly alarm only asks whether one is due); `force` is the user's button.
- * Sends no cookies or user data; the request is a plain GET. Installing stays manual (see lib/update.ts).
+ * Sends no cookies or user data: a plain GET of `update.json`, and of the release API only when that file
+ * cannot be read. Installing stays manual (see lib/update.ts).
  */
 async function checkForUpdate(force: boolean): Promise<CommandReply> {
   if (checkingUpdate) return { ok: false, error: 'Đang kiểm tra cập nhật.' };
@@ -153,10 +154,7 @@ async function checkForUpdate(force: boolean): Promise<CommandReply> {
   if (!force && !updateCheckDue(await updateItem.getValue(), now)) return { ok: true };
   checkingUpdate = true;
   try {
-    const response = await fetch(UPDATE_API_URL, { credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
-    if (!response.ok) throw new Error(response.status === 404 ? 'Chưa có bản phát hành nào.' : `GitHub trả về lỗi ${response.status}.`);
-    const latest = parseLatestRelease(await response.json());
-    if (!latest) throw new Error('Không đọc được bản phát hành mới nhất.');
+    const latest = await fetchLatestRelease((url, init) => fetch(url, init));
     await updateItem.setValue({ checkedAt: now, latest, error: null });
     return { ok: true };
   } catch (e) {
