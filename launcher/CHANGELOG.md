@@ -5,6 +5,12 @@ new version here (`launcher/package.json` and `src-tauri/Cargo.toml`). CAP's cha
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-11
+
+### Added
+- **Keep the CAP you already use up to date.** In "Chrome có sẵn", the new **Chọn thư mục CAP đang dùng** button lets you pick the folder Chrome already loads CAP from (shown as *Loaded from* in CAP's details on `chrome://extensions`). The app then updates that folder directly: no removing, no Load unpacked again, data stays, and CAP (0.8.0 or later) reloads itself into the new version when no run is active (it checks hourly; ⟳ on its card in `chrome://extensions` applies it at once). Only a folder whose `manifest.json` is Connecttech Auto Poster is accepted, because updating replaces every file in it.
+- Verified: CAP 0.8.0 running in Chrome for Testing with Developer mode, its folder replaced by 1.0.0, reloads itself into 1.0.0.
+
 ## [1.0.0] - 2026-11-11
 
 ### Added

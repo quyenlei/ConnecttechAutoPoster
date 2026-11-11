@@ -1,6 +1,6 @@
 [package]
 name = "connecttech-launcher"
-version = "1.0.0"
+version = "1.1.0"
 description = "Installs and updates Connecttech Auto Poster"
 authors = ["Connecttech"]
 edition = "2024"
@@ -29,6 +29,7 @@ hex = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "time"] }
 futures-util = "0.3"
 sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+tauri-plugin-dialog = "2"
 
 [dev-dependencies]
 tempfile = "3"
