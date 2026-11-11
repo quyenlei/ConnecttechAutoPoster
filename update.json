@@ -5,15 +5,15 @@
   "sha256": "298a9b1afe5f0e52a9a121bccec51a807d4e93d9e667eea4895229fb572f0344",
   "publishedAt": "2026-11-11T10:20:44.495Z",
   "app": {
-    "version": "1.0.0",
-    "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.0.0",
+    "version": "1.1.0",
+    "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.1.0",
     "downloads": {
-      "linux-amd64.AppImage": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-linux-amd64.AppImage",
-      "linux-amd64.deb": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-linux-amd64.deb",
-      "mac-arm64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-mac-arm64.dmg",
-      "mac-x64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-mac-x64.dmg",
-      "windows-x64-setup.exe": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.0.0/Connecttech-windows-x64-setup.exe"
+      "linux-amd64.AppImage": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.1.0/Connecttech-linux-amd64.AppImage",
+      "linux-amd64.deb": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.1.0/Connecttech-linux-amd64.deb",
+      "mac-arm64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.1.0/Connecttech-mac-arm64.dmg",
+      "mac-x64.dmg": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.1.0/Connecttech-mac-x64.dmg",
+      "windows-x64-setup.exe": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/app-v1.1.0/Connecttech-windows-x64-setup.exe"
     },
-    "publishedAt": "2026-11-11T09:59:30.624Z"
+    "publishedAt": "2026-11-11T10:41:11.316Z"
   }
 }
