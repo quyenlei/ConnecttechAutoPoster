@@ -1,4 +1,4 @@
-"""End-to-end test of the updater helper on the current OS (macOS or Windows), against a local mock of GitHub.
+"""End-to-end test of the updater helper on the current OS (Windows, macOS or Linux), against a local mock of GitHub.
 
 Runs the real installer and the real helper in a temporary home: install, then ping and update through the
 native messaging protocol exactly as Chrome frames it, plus the refusals (bad checksum, foreign URL, no checksum).
@@ -11,6 +11,7 @@ UPDATER = os.path.dirname(HERE)
 ID = 'ebembjpemaickbaogincmeajpgeabcbh'
 HOST = 'com.connecttech.cap_updater'
 WINDOWS = platform.system() == 'Windows'
+LINUX = platform.system() == 'Linux'
 
 files = {}  # path -> bytes served by the mock
 
@@ -99,7 +100,10 @@ def native(message):
 
 # 1. Install: registers the host for CAP only and downloads the current release.
 publish('9.9.1', extra='old.js')
-installer = [os.path.join(UPDATER, 'windows', 'install.bat')] if WINDOWS else ['/bin/bash', os.path.join(UPDATER, 'mac', 'install.command')]
+if WINDOWS:
+    installer = [os.path.join(UPDATER, 'windows', 'install.bat')]
+else:
+    installer = ['/bin/bash', os.path.join(UPDATER, 'linux', 'install.sh') if LINUX else os.path.join(UPDATER, 'mac', 'install.command')]
 run = subprocess.run(installer, capture_output=True, env=env, timeout=600, shell=False)
 assert run.returncode == 0, run.stdout.decode(errors='replace') + run.stderr.decode(errors='replace')
 manifest = host_manifest()

@@ -59,10 +59,11 @@ const zip = join(root, '.output', zipName);
 if (!existsSync(zip)) throw new Error(`Zip not found: ${zip}`);
 
 // The helper's installers, under fixed names so releases/latest/download/<name> always works.
-// `zip -X` leaves out extra file attributes but keeps the Unix permissions the macOS scripts need.
+// `zip -X` leaves out extra file attributes but keeps the Unix permissions the macOS and Linux scripts need.
 const installers = [
   ['cap-updater-windows.zip', 'updater/windows', ['install.bat', 'install.ps1', 'cap-updater.ps1']],
   ['cap-updater-mac.zip', 'updater/mac', ['install.command', 'cap-updater.sh']],
+  ['cap-updater-linux.zip', 'updater/linux', ['install.sh', 'cap-updater.sh']],
 ].map(([file, dir, names]) => {
   const out = join(root, '.output', file);
   rmSync(out, { force: true });
