@@ -4,10 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
-## [0.8.1] - 2026-11-11
+## [0.8.2] - 2026-11-11
 
 ### Fixed
 - The app's **Tôi đã làm xong** button (Chrome có sẵn guide) did nothing: the guide stayed on screen. It now moves on.
+- Releases: a merge into `main` whose version is already released now ends quietly instead of failing ("a release with the same tag name already exists"). The release check reads GitHub's answer explicitly (200 skip, 404 release, anything else stops with the error) instead of treating every error as "not released".
+
+## [0.8.1] - 2026-11-11
+
+### Fixed
 - **macOS said "Connecttech.app is damaged and can't be opened".** Only the program inside was signed, not the app bundle, so Gatekeeper rejected the download as damaged. The whole bundle is now ad-hoc signed (`bundle.macOS.signingIdentity: "-"`, minimum macOS 11), and the release workflow checks the signature with `codesign --verify --deep --strict` before publishing. The app is still not notarized: macOS asks once, then **System Settings → Privacy & Security → Open Anyway**.
 
 ## [0.8.0] - 2026-11-11
