@@ -102,7 +102,11 @@ export type RunCommand =
   /** Reads the user's joined groups from facebook.com/groups/joins/ (read-only) into `joinedScanItem`. */
   | { type: 'cap/run/fetch-joined' }
   /** Asks GitHub for the latest release now, instead of waiting for the daily check. */
-  | { type: 'cap/run/check-update' };
+  | { type: 'cap/run/check-update' }
+  /** Asks the optional updater helper whether it is installed and which version its folder holds (`updaterItem`). */
+  | { type: 'cap/run/updater-status' }
+  /** Asks the updater helper to install the latest release, then reloads CAP. Refused while a run is active. */
+  | { type: 'cap/run/install-update' };
 
 export interface CommandReply {
   ok: boolean;
