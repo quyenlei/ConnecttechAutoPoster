@@ -1,11 +1,11 @@
 /**
- * Update check against the GitHub releases of a public repository that holds only the built extension.
- * The source repository stays private. Chrome cannot replace an unpacked extension's own files, so CAP only
+ * Update check against the GitHub releases of the public CAP repository (built zip attached to each release).
+ * Chrome cannot replace an unpacked extension's own files, so CAP only
  * tells the user that a newer version exists and links to its zip; installing stays a manual step.
  */
 
-/** Public repository with one release per version (tag `v1.2.3`, the built zip attached). */
-export const UPDATE_REPO = 'quyenlei/ConnecttechAutoPoster-releases';
+/** Public CAP repository with one release per version (tag `v1.2.3`, the built zip attached). */
+export const UPDATE_REPO = 'quyenlei/ConnecttechAutoPoster';
 export const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
 export const UPDATE_PAGE_URL = `https://github.com/${UPDATE_REPO}/releases/latest`;
 

@@ -114,8 +114,8 @@ page_loads = []
 github_requests = []  # update checks: api.github.com is mapped to this mock as well
 LATEST_RELEASE = json.dumps({
     'tag_name': 'v99.0.0', 'draft': False, 'prerelease': False, 'published_at': '2026-11-11T00:00:00Z',
-    'html_url': 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/tag/v99.0.0',
-    'assets': [{'name': 'connecttech-auto-poster-99.0.0-chrome.zip', 'browser_download_url': 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/download/v99.0.0/cap.zip'}],
+    'html_url': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v99.0.0',
+    'assets': [{'name': 'connecttech-auto-poster-99.0.0-chrome.zip', 'browser_download_url': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v99.0.0/cap.zip'}],
 }).encode()
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -127,7 +127,7 @@ class H(http.server.BaseHTTPRequestHandler):
             body, ctype = b'ok', 'text/plain'
         elif self.headers.get('Host', '').startswith('api.github.com'):
             github_requests.append(self.path)
-            ok = self.path == '/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest'
+            ok = self.path == '/repos/quyenlei/ConnecttechAutoPoster/releases/latest'
             body = LATEST_RELEASE if ok else b'{}'
             self.send_response(200 if ok else 404); self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*'); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -533,7 +533,7 @@ with sync_playwright() as p:
     # The daily update check read the (mock) GitHub release, so the chat box offers the newer version.
     chat.locator("text=Có bản mới").wait_for(timeout=15000)
     assert chat.locator("a:has-text('Tải bản 99.0.0')").get_attribute('href').startswith('https://github.com/'), 'zip link must point to github.com'
-    assert len(github_requests) >= 2 and set(github_requests) == {'/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest'}, github_requests
+    assert len(github_requests) >= 2 and set(github_requests) == {'/repos/quyenlei/ConnecttechAutoPoster/releases/latest'}, github_requests
     fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
     fb.click("cap-chat-host button[aria-label='Mở rộng']")
     chat.locator("button.shell__tab:has(span:text-is('Chiến dịch'))").wait_for(timeout=15000)

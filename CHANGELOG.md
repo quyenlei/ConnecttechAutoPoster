@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-11
+
+### Changed
+- **The update check now reads the releases of the public CAP repository `quyenlei/ConnecttechAutoPoster`** instead of the separate `quyenlei/ConnecttechAutoPoster-releases`, which was never created (owner decision: the source repository is now public). Same single GET of GitHub's latest-release API, at most once a day plus the button; no new permission or host. `pnpm release` publishes there too.
+
 ## [0.7.0] - 2026-11-11
 
 ### Changed
