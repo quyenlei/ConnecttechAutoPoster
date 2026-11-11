@@ -4,6 +4,8 @@ import { copy, errorMessage, openChrome } from '../api';
 interface Props {
   extensionPath: string;
   onDone: () => void;
+  /** CAP is already loaded in Chrome from another folder: keep that folder up to date instead. */
+  onAdopt: () => void;
 }
 
 /** How to paste the folder path in Chrome's "Load unpacked" dialog on this system. */
@@ -15,7 +17,7 @@ function pasteHint(): string {
 }
 
 /** Mode 2: the one-time manual steps in the user's Chrome. Chrome forbids apps from doing these. */
-export function ChromeGuide({ extensionPath, onDone }: Props) {
+export function ChromeGuide({ extensionPath, onDone, onAdopt }: Props) {
   const [message, setMessage] = useState<string | null>(null);
 
   async function copyAndSay(text: string, what: string) {
@@ -35,6 +37,17 @@ export function ChromeGuide({ extensionPath, onDone }: Props) {
     <section className="screen" aria-labelledby="guide-title">
       <h1 id="guide-title" className="screen__title">Nạp CAP vào Chrome</h1>
       <p className="screen__lead">Chrome không cho app nào tự cài tiện ích, nên bước này bạn làm một lần (khoảng 30 giây).</p>
+      <div className="notice notice--accent">
+        <h2 className="steps__title">Chrome đã có CAP rồi?</h2>
+        <p className="screen__lead">
+          Không cần gỡ hay nạp lại. Mở <code>chrome://extensions</code>, bấm <strong>Details</strong> (Chi tiết) ở thẻ Connecttech Auto Poster,
+          xem dòng <strong>Loaded from</strong> (Tải từ), rồi chọn đúng thư mục đó. App sẽ cập nhật thẳng vào thư mục ấy; dữ liệu giữ nguyên và CAP tự tải lại khi không có lượt chạy nào.
+        </p>
+        <div className="steps__actions">
+          <button className="button button--primary" type="button" onClick={onAdopt}>Chọn thư mục CAP đang dùng</button>
+        </div>
+      </div>
+      <h2 className="screen__subtitle">Hoặc nạp CAP mới vào Chrome</h2>
       <ol className="steps">
         <li className="steps__item">
           <h2 className="steps__title">Mở trang tiện ích của Chrome</h2>

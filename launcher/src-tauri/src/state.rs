@@ -1,39 +1,22 @@
-//! The launcher's own settings (`<data>/settings.json`) and the rule for when an update may be applied.
+//! The launcher's own settings (`<data>/settings.json`) and which CAP folder it keeps up to date.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    /// Chrome for Testing started by the launcher, CAP loaded automatically.
-    Browser,
-    /// The user's Chrome, CAP loaded once with Load unpacked.
-    Chrome,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
-    pub mode: Option<Mode>,
     /// Unix seconds of the last update check.
     #[serde(default)]
     pub last_check: u64,
+    /// The CAP folder Chrome already loads, chosen by the user, instead of the app's own.
+    #[serde(default)]
+    pub chrome_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
-    Apply,
-    Defer,
-    Nothing,
-}
-
-/// Where CAP lives for `mode`. Separate folders, so one mode never replaces the other's files.
-pub fn extension_dir(data: &Path, mode: Mode) -> PathBuf {
-    match mode {
-        Mode::Browser => data.join("extension"),
-        Mode::Chrome => data.join("chrome-extension"),
-    }
+/// The folder the app keeps up to date: the one the user chose, else the app's own `<data>/chrome-extension`.
+pub fn cap_dir(data: &Path, settings: &Settings) -> PathBuf {
+    settings.chrome_dir.clone().unwrap_or_else(|| data.join("chrome-extension"))
 }
 
 pub fn load_settings(data: &Path) -> Settings {
@@ -51,60 +34,32 @@ pub fn save_settings(data: &Path, settings: &Settings) -> std::io::Result<()> {
     std::fs::rename(tmp, data.join("settings.json"))
 }
 
-/// Whether to apply `latest` now. The launcher's own browser never gets files replaced while it runs (CAP could
-/// not reload itself there); the user's Chrome does, and CAP reloads itself when idle.
-pub fn decide(mode: Mode, browser_running: bool, installed: Option<&str>, latest: &str) -> Action {
-    let newer = installed.is_none_or(|current| crate::release::is_newer(latest, current));
-    match (newer, mode, browser_running) {
-        (false, _, _) => Action::Nothing,
-        (true, Mode::Browser, true) => Action::Defer,
-        (true, _, _) => Action::Apply,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn waits_while_the_launchers_browser_runs() {
-        assert_eq!(decide(Mode::Browser, true, Some("0.7.5"), "0.7.6"), Action::Defer);
-        assert_eq!(decide(Mode::Browser, false, Some("0.7.5"), "0.7.6"), Action::Apply);
-    }
-
-    #[test]
-    fn updates_the_users_chrome_folder_at_once() {
-        assert_eq!(decide(Mode::Chrome, true, Some("0.7.5"), "0.7.6"), Action::Apply);
-        assert_eq!(decide(Mode::Chrome, false, Some("0.7.5"), "0.7.6"), Action::Apply);
-    }
-
-    #[test]
-    fn does_nothing_when_up_to_date() {
-        assert_eq!(decide(Mode::Browser, false, Some("0.7.6"), "0.7.6"), Action::Nothing);
-        assert_eq!(decide(Mode::Chrome, false, Some("0.7.7"), "0.7.6"), Action::Nothing);
-    }
-
-    #[test]
-    fn installs_when_nothing_is_there() {
-        assert_eq!(decide(Mode::Chrome, false, None, "0.7.6"), Action::Apply);
-        assert_eq!(decide(Mode::Browser, true, None, "0.7.6"), Action::Defer);
-    }
-
-    #[test]
-    fn keeps_each_modes_extension_apart() {
+    fn updates_the_folder_chrome_already_loads_when_one_was_chosen() {
         let data = Path::new("/data");
-        assert_eq!(extension_dir(data, Mode::Browser), data.join("extension"));
-        assert_eq!(extension_dir(data, Mode::Chrome), data.join("chrome-extension"));
+        let mut settings = Settings::default();
+        assert_eq!(cap_dir(data, &settings), data.join("chrome-extension"));
+        settings.chrome_dir = Some(PathBuf::from("/Users/me/CAP"));
+        assert_eq!(cap_dir(data, &settings), PathBuf::from("/Users/me/CAP"));
     }
 
     #[test]
     fn settings_round_trip_and_default_when_missing() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(load_settings(dir.path()), Settings::default());
-        let settings = Settings { mode: Some(Mode::Chrome), last_check: 42 };
+        let settings = Settings { last_check: 42, chrome_dir: Some(PathBuf::from("/x")) };
         save_settings(dir.path(), &settings).unwrap();
         assert_eq!(load_settings(dir.path()), settings);
-        let text = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
-        assert!(text.contains(r#""mode":"chrome""#), "{text}");
+    }
+
+    #[test]
+    fn reads_settings_written_by_app_1_0_with_a_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("settings.json"), r#"{"mode":"browser","lastCheck":7}"#).unwrap();
+        assert_eq!(load_settings(dir.path()), Settings { last_check: 7, chrome_dir: None });
     }
 }

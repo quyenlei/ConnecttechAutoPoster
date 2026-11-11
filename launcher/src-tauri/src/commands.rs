@@ -1,13 +1,13 @@
 //! Tauri commands and events: the UI calls these; progress and status changes come back as events.
+//! The app keeps one CAP folder up to date for the user's own Chrome: the folder Chrome already loads (chosen by
+//! the user) or the app's own `<data>/chrome-extension`. CAP reloads itself when that folder holds a newer version.
 
-use crate::browser::{self, BrowserBuild};
-use crate::install::{fetch_text, install_release, installed_version};
-use crate::release::{is_newer, parse_app_latest, parse_release, ErrorCode, Release, UPDATE_JSON_URL};
-use crate::state::{decide, extension_dir, load_settings, save_settings, Action, Mode, Settings};
+use crate::install::{fetch_text, install_release, installed_version, is_cap_folder};
+use crate::release::{is_newer, parse_app_latest, parse_release, ErrorCode, UPDATE_JSON_URL};
+use crate::state::{cap_dir, load_settings, save_settings, Settings};
 use serde::Serialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -19,36 +19,22 @@ pub struct AppState {
     data: PathBuf,
     client: reqwest::Client,
     settings: Mutex<Settings>,
-    child: Mutex<Option<Child>>,
-    /// A CAP release or browser build waiting for the launcher's browser to close.
-    pending: Mutex<Pending>,
     latest: Mutex<Option<String>>,
     /// The app's own latest version and release page (`app` in update.json).
     app_latest: Mutex<Option<(String, String)>>,
     error: Mutex<Option<String>>,
     busy: Mutex<bool>,
-    /// A watcher waits for the launcher's browser to close (at most one).
-    watching: Mutex<bool>,
-    /// Tests against a local mock only (CAP_LAUNCHER_TEST=1): allows http://127.0.0.1 and other URLs.
+    /// Tests against a local mock only (CAP_LAUNCHER_TEST=1): allows http://127.0.0.1 and another update.json URL.
     test: bool,
-}
-
-#[derive(Default)]
-struct Pending {
-    cap: Option<Release>,
-    browser: Option<BrowserBuild>,
 }
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    mode: Option<Mode>,
-    platform_supported: bool,
     cap_version: Option<String>,
-    browser_version: Option<String>,
-    browser_running: bool,
-    pending_update: Option<String>,
     extension_path: String,
+    /// The user chose the folder Chrome already loads (else the app's own folder).
+    custom_folder: bool,
     latest: Option<String>,
     app_version: String,
     app_update: bool,
@@ -76,44 +62,20 @@ impl AppState {
             settings: Mutex::new(load_settings(&data)),
             data,
             client,
-            child: Mutex::default(),
-            pending: Mutex::default(),
             latest: Mutex::default(),
             app_latest: Mutex::default(),
             error: Mutex::default(),
             busy: Mutex::new(false),
-            watching: Mutex::new(false),
             test,
         }
     }
 
-    fn mode(&self) -> Option<Mode> {
-        self.settings.lock().unwrap().mode
-    }
-
-    /// The launcher's browser is open: the one this session started, or one still open from an earlier session
-    /// (found by its program living in `<data>/browser`).
-    fn running(&self) -> bool {
-        let mine = {
-            let mut child = self.child.lock().unwrap();
-            match child.as_mut().map(|c| c.try_wait()) {
-                Some(Ok(None)) => true,
-                Some(_) => {
-                    *child = None;
-                    false
-                }
-                None => false,
-            }
-        };
-        mine || browser::browser_process_running(&self.data)
+    fn target_dir(&self) -> PathBuf {
+        cap_dir(&self.data, &self.settings.lock().unwrap())
     }
 
     fn update_json_url(&self) -> String {
         std::env::var("CAP_UPDATE_MANIFEST_URL").ok().filter(|_| self.test).unwrap_or_else(|| UPDATE_JSON_URL.into())
-    }
-
-    fn index_url(&self) -> String {
-        std::env::var("CAP_BROWSER_INDEX_URL").ok().filter(|_| self.test).unwrap_or_else(|| browser::INDEX_URL.into())
     }
 
     fn log(&self, line: &str) {
@@ -124,32 +86,21 @@ impl AppState {
     }
 
     fn status(&self, app: &AppHandle) -> Status {
-        let mode = self.mode();
-        let ext = extension_dir(&self.data, mode.unwrap_or(Mode::Chrome));
-        let pending = self.pending.lock().unwrap();
-        let latest = self.latest.lock().unwrap().clone();
+        let ext = self.target_dir();
         let app_version = app.package_info().version.to_string();
         let app_latest = self.app_latest.lock().unwrap().clone();
         Status {
-            mode,
-            platform_supported: platform().is_some(),
             cap_version: installed_version(&ext),
-            browser_version: browser::installed_browser_version(&self.data),
-            browser_running: self.running(),
-            pending_update: pending.cap.as_ref().map(|r| r.version.clone()).or(pending.browser.as_ref().map(|_| String::new())),
             extension_path: ext.display().to_string(),
+            custom_folder: self.settings.lock().unwrap().chrome_dir.is_some(),
+            latest: self.latest.lock().unwrap().clone(),
             app_update: app_latest.as_ref().is_some_and(|(v, _)| is_newer(v, &app_version)),
             app_page_url: app_latest.map(|(_, page)| page),
-            latest,
             app_version,
             busy: *self.busy.lock().unwrap(),
             error: self.error.lock().unwrap().clone(),
         }
     }
-}
-
-fn platform() -> Option<&'static str> {
-    browser::platform_key(std::env::consts::OS, std::env::consts::ARCH)
 }
 
 fn now() -> u64 {
@@ -161,10 +112,10 @@ fn emit_status(app: &AppHandle) {
     let _ = app.emit("status", state.status(app));
 }
 
-fn progress(app: &AppHandle, item: &'static str) -> impl Fn(u64, Option<u64>) + use<> {
+fn progress(app: &AppHandle) -> impl Fn(u64, Option<u64>) + use<> {
     let app = app.clone();
     move |done, total| {
-        let _ = app.emit("progress", Progress { item, done, total });
+        let _ = app.emit("progress", Progress { item: "cap", done, total });
     }
 }
 
@@ -196,67 +147,17 @@ where
     result.map_err(|code| code.as_str().to_string())
 }
 
-async fn fetch_browser_build(state: &AppState) -> Result<BrowserBuild, ErrorCode> {
-    let platform = platform().ok_or(ErrorCode::Manifest)?;
-    let response = state.client.get(state.index_url()).timeout(Duration::from_secs(30)).send().await.map_err(|_| ErrorCode::Network)?;
-    if !response.status().is_success() {
-        return Err(ErrorCode::Network);
-    }
-    let body = response.text().await.map_err(|_| ErrorCode::Network)?;
-    browser::parse_index(&body, platform, state.test).ok_or(ErrorCode::Manifest)
-}
-
-async fn apply_browser(app: &AppHandle, build: &BrowserBuild) -> Result<(), ErrorCode> {
-    let state = app.state::<AppState>();
-    let platform = platform().ok_or(ErrorCode::Manifest)?;
-    browser::install_browser(&state.client, build, platform, &state.data, state.test, progress(app, "browser")).await.map(|_| ())
-}
-
-async fn apply_cap(app: &AppHandle, release: &Release, mode: Mode) -> Result<(), ErrorCode> {
-    let state = app.state::<AppState>();
-    let target = extension_dir(&state.data, mode);
-    install_release(&state.client, release, &state.data.join("staging"), &target, progress(app, "cap")).await.map(|_| ())
-}
-
-/// Checks both CAP and (mode 1) the browser, applying what may be applied now and keeping the rest pending.
+/// Reads update.json and brings the CAP folder to the announced version (nothing when it is already there).
 async fn check_and_apply(app: &AppHandle) -> Result<(), ErrorCode> {
     let state = app.state::<AppState>();
-    let mode = state.mode().ok_or(ErrorCode::Manifest)?;
     let body = fetch_text(&state.client, &state.update_json_url()).await?;
     *state.app_latest.lock().unwrap() = parse_app_latest(&body);
     let release = parse_release(&body, state.test)?;
     *state.latest.lock().unwrap() = Some(release.version.clone());
-    let running = state.running();
-    let installed = installed_version(&extension_dir(&state.data, mode));
-    match decide(mode, running, installed.as_deref(), &release.version) {
-        Action::Apply => apply_cap(app, &release, mode).await?,
-        Action::Defer => state.pending.lock().unwrap().cap = Some(release),
-        Action::Nothing => {}
-    }
-    if mode == Mode::Browser {
-        // A browser problem must not block CAP updates; it only fails the check when there is no browser yet.
-        let have = browser::installed_browser_version(&state.data);
-        let browser = async {
-            let build = fetch_browser_build(&state).await?;
-            if have.as_deref() != Some(build.version.as_str()) {
-                if running {
-                    state.pending.lock().unwrap().browser = Some(build);
-                } else {
-                    apply_browser(app, &build).await?;
-                }
-            }
-            Ok::<(), ErrorCode>(())
-        }
-        .await;
-        if let Err(code) = browser {
-            if have.is_none() {
-                return Err(code);
-            }
-            state.log(&format!("browser update: {}", code.as_str()));
-        }
-        if running {
-            watch_browser(app.clone());
-        }
+    let target = state.target_dir();
+    let installed = installed_version(&target);
+    if installed.as_deref().is_none_or(|current| is_newer(&release.version, current)) {
+        install_release(&state.client, &release, &state.data.join("staging"), &target, progress(app)).await?;
     }
     // Only a check that went through counts; a failed one is retried by the next background round.
     let mut settings = state.settings.lock().unwrap();
@@ -265,107 +166,35 @@ async fn check_and_apply(app: &AppHandle) -> Result<(), ErrorCode> {
     Ok(())
 }
 
-/// Applies what waited for the launcher's browser to close.
-async fn apply_pending(app: &AppHandle) -> Result<(), ErrorCode> {
-    let state = app.state::<AppState>();
-    let (cap, build) = {
-        let mut pending = state.pending.lock().unwrap();
-        (pending.cap.take(), pending.browser.take())
-    };
-    let mut result = Ok(());
-    if let Some(build) = build {
-        if let Err(code) = apply_browser(app, &build).await {
-            state.pending.lock().unwrap().browser = Some(build);
-            result = Err(code);
-        }
-    }
-    if let Some(release) = cap {
-        if let Err(code) = apply_cap(app, &release, Mode::Browser).await {
-            state.pending.lock().unwrap().cap = Some(release);
-            result = result.and(Err(code));
-        }
-    }
-    result
-}
-
 #[tauri::command]
 pub fn get_status(app: AppHandle, state: State<'_, AppState>) -> Status {
     state.status(&app)
 }
 
-#[tauri::command]
-pub fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Result<Status, String> {
-    {
-        let mut settings = state.settings.lock().unwrap();
-        settings.mode = Some(mode);
-        save_settings(&state.data, &settings).map_err(|_| "folder".to_string())?;
-    }
-    state.log(&format!("mode: {mode:?}"));
-    Ok(state.status(&app))
-}
-
-/// First install for the chosen mode, and the "Kiểm tra cập nhật" button.
+/// First install and the "Kiểm tra cập nhật" button.
 #[tauri::command]
 pub async fn check_updates(app: AppHandle) -> Result<(), String> {
     guarded(&app, "update", check_and_apply(&app)).await
 }
 
+/// Keep the CAP folder Chrome already loads up to date, instead of the app's own folder. Only a folder holding
+/// CAP is accepted, because updating replaces every file in it.
 #[tauri::command]
-pub async fn launch_browser(app: AppHandle) -> Result<(), String> {
-    let launch = async {
-        let state = app.state::<AppState>();
-        if state.running() {
-            return Ok(());
-        }
-        if let Err(code) = apply_pending(&app).await {
-            state.log(&format!("pending update: {}", code.as_str()));
-        }
-        let version = browser::installed_browser_version(&state.data).ok_or(ErrorCode::Folder)?;
-        let platform = platform().ok_or(ErrorCode::Manifest)?;
-        let exe = browser::executable_path(&state.data.join("browser").join(version), platform);
-        let child = std::process::Command::new(exe)
-            .args(browser::launch_args(&state.data))
-            .spawn()
-            .map_err(|_| ErrorCode::Folder)?;
-        *state.child.lock().unwrap() = Some(child);
-        watch_browser(app.clone());
-        Ok(())
-    };
-    guarded(&app, "launch", launch).await
-}
-
-/// When the launcher's browser closes, apply any pending update and tell the UI.
-fn watch_browser(app: AppHandle) {
-    {
-        let state = app.state::<AppState>();
-        let mut watching = state.watching.lock().unwrap();
-        if *watching {
-            return;
-        }
-        *watching = true;
+pub fn use_cap_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<Status, String> {
+    let dir = PathBuf::from(path);
+    if !is_cap_folder(&dir) {
+        return Err("not-cap".into());
     }
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            if !app.state::<AppState>().running() {
-                break;
-            }
-        }
-        *app.state::<AppState>().watching.lock().unwrap() = false;
-        let has_pending = {
-            let state = app.state::<AppState>();
-            let pending = state.pending.lock().unwrap();
-            pending.cap.is_some() || pending.browser.is_some()
-        };
-        if has_pending {
-            let _ = guarded(&app, "update", apply_pending(&app)).await;
-        } else {
-            emit_status(&app);
-        }
-    });
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.chrome_dir = Some(dir.clone());
+        save_settings(&state.data, &settings).map_err(|_| "folder".to_string())?;
+    }
+    state.log(&format!("cap folder: {}", dir.display()));
+    Ok(state.status(&app))
 }
 
-/// Starts the user's own Chrome (mode 2). Chrome refuses chrome:// addresses from outside, so the UI copies
+/// Starts the user's Chrome. Chrome refuses chrome:// addresses from outside, so the UI copies
 /// `chrome://extensions` for the user to paste.
 #[tauri::command]
 pub fn open_chrome() -> Result<(), String> {
@@ -394,15 +223,15 @@ pub fn read_log(state: State<'_, AppState>) -> String {
     lines[lines.len().saturating_sub(20)..].join("\n")
 }
 
-/// Startup: check if a mode is chosen and the last check is a day old, then every day while open.
+/// Once CAP is installed: check when the last check is a day old, looking again every hour while the app is open.
 pub fn start_background_checks(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             let due = {
                 let state = app.state::<AppState>();
-                let settings = state.settings.lock().unwrap();
-                let installed = settings.mode.is_some_and(|m| installed_version(&extension_dir(&state.data, m)).is_some());
-                installed && now().saturating_sub(settings.last_check) >= CHECK_EVERY.as_secs()
+                let installed = installed_version(&state.target_dir()).is_some();
+                let last = state.settings.lock().unwrap().last_check;
+                installed && now().saturating_sub(last) >= CHECK_EVERY.as_secs()
             };
             if due {
                 let _ = guarded(&app, "update", check_and_apply(&app)).await;
