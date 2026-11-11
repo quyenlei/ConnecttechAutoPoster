@@ -1,0 +1,13 @@
+# Connecttech app changelog
+
+The desktop app in `launcher/` (Tauri). Released on its own as `app-v<version>` when a merge into `main` carries a
+new version here (`launcher/package.json` and `src-tauri/Cargo.toml`). CAP's changes are in `../CHANGELOG.md`.
+
+## [Unreleased]
+
+## [1.0.0] - 2026-11-11
+
+### Added
+- First version released on its own. Two ways to use CAP: **Trình duyệt riêng** (the app downloads Chrome for Testing and starts it with CAP loaded) or **Chrome có sẵn** (one guided Load unpacked). Installs and updates CAP from `update.json`, checks SHA-256 and version, never replaces the files of its own browser while it runs.
+- "Có bản app mới" now compares with the app's own latest version (`app` in `update.json`), not CAP's.
+- Same features as the app shipped with CAP 0.8.0–0.8.2, including the ad-hoc signed macOS bundle and the working **Tôi đã làm xong** button.

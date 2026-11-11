@@ -18,12 +18,16 @@ pub fn installed_version(dir: &Path) -> Option<String> {
 
 /// GETs and validates `update.json`.
 pub async fn fetch_release(client: &reqwest::Client, url: &str, allow_http: bool) -> Result<Release, ErrorCode> {
+    parse_release(&fetch_text(client, url).await?, allow_http)
+}
+
+/// GETs a small text file (update.json) within 30 s.
+pub async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, ErrorCode> {
     let response = client.get(url).timeout(Duration::from_secs(30)).send().await.map_err(|_| ErrorCode::Network)?;
     if !response.status().is_success() {
         return Err(ErrorCode::Network);
     }
-    let body = response.text().await.map_err(|_| ErrorCode::Network)?;
-    parse_release(&body, allow_http)
+    response.text().await.map_err(|_| ErrorCode::Network)
 }
 
 /// Brings `target` to `release`. Returns whether anything changed. `progress(done, total)` reports download bytes.

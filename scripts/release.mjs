@@ -1,67 +1,28 @@
-// Publishes the current version for the in-extension update check (normally run by .github/workflows/release.yml
-// when a merge into main carries a version that has no release yet; it also works by hand with the GitHub CLI):
-// 1. zips the build and creates the GitHub release `v<version>` in the public CAP repository (UPDATE_REPO in
-//    src/lib/update.ts) with it and the Connecttech app installers attached and the CHANGELOG section of that
-//    version as notes; in CI it creates the tag on the merged commit, by hand the tag must already be pushed;
-// 2. only then points `update.json` on the `update` branch (UPDATE_BRANCH) at that release, so CAP never
-//    announces a version whose zip does not exist yet. update.json carries the zip's SHA-256 for the Connecttech app.
-// Connecttech launcher installers built by the workflow's `launcher` job are attached from .output/launcher/ when
-// that folder exists.
-// It does not bump the version. `--dry-run` builds the zips and prints the notes and update.json without publishing.
+// Publishes a CAP (extension) version: normally run by .github/workflows/release.yml when a merge into main carries
+// a package.json version that has no release yet; it also works by hand with the GitHub CLI logged in.
+// 1. zips the build and creates the GitHub release `v<version>` with the zip and the CHANGELOG.md section as notes;
+// 2. only then points update.json on the `update` branch at it (version, pages, zip and its SHA-256), keeping the
+//    app's fields (`app`), so CAP and the Connecttech app never announce a version whose zip does not exist yet.
+// The Connecttech app is released separately (scripts/release-app.mjs, tag `app-v<version>`).
+// It does not bump the version. `--dry-run` builds the zip and prints the notes and update.json without publishing.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const root = fileURLToPath(new URL('..', import.meta.url));
-const read = (path) => readFileSync(join(root, path), 'utf8');
-const dryRun = process.argv.includes('--dry-run');
-
-function run(command, args) {
-  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
-}
-
-/** `gh api` with an optional JSON body; returns the parsed answer, or null on a 404 when `allow404` is set. */
-function ghApi(args, body, allow404 = false) {
-  const input = body === undefined ? undefined : JSON.stringify(body);
-  const result = spawnSync('gh', ['api', ...args, ...(input === undefined ? [] : ['--input', '-'])], { cwd: root, input, encoding: 'utf8' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    if (allow404 && /HTTP 404/.test(result.stderr)) return null;
-    process.stderr.write(result.stderr);
-    process.exit(result.status ?? 1);
-  }
-  return result.stdout.trim() ? JSON.parse(result.stdout) : null;
-}
+import { alreadyReleased, changelogNotes, createRelease, dryRun, read, readUpdateJson, root, run, target, writeUpdateJson } from './release-common.mjs';
 
 const { name, version } = JSON.parse(read('package.json'));
-const update = read('src/lib/update.ts');
-const repo = /UPDATE_REPO = '([^']+)'/.exec(update)?.[1];
-const branch = /UPDATE_BRANCH = '([^']+)'/.exec(update)?.[1];
-if (!repo || !branch) throw new Error('UPDATE_REPO or UPDATE_BRANCH not found in src/lib/update.ts');
+const { repo, branch } = target();
 const tag = `v${version}`;
-
-// In CI the pushed tag must match package.json, so a tag never publishes another version's build.
-// A manual dry run (workflow_dispatch) runs on a branch, so only a tag ref is checked.
-const ref = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined; // legacy tag runs
-if (ref && ref !== tag) throw new Error(`Tag ${ref} does not match package.json version ${version}.`);
-
-const changelog = read('CHANGELOG.md');
-const start = changelog.indexOf(`## [${version}]`);
-if (start === -1) throw new Error(`CHANGELOG.md has no section for ${version}. Add it before releasing.`);
-const next = changelog.indexOf('\n## [', start + 1);
-const notes = changelog.slice(changelog.indexOf('\n', start) + 1, next === -1 ? undefined : next).trim();
+const notes = changelogNotes('CHANGELOG.md', version);
 
 const zipName = `${name}-${version}-chrome.zip`;
 run('pnpm', ['exec', 'wxt', 'zip']);
 const zip = join(root, '.output', zipName);
 if (!existsSync(zip)) throw new Error(`Zip not found: ${zip}`);
 
+const current = readUpdateJson(repo, branch);
 const manifest = {
+  ...current,
   version,
   pageUrl: `https://github.com/${repo}/releases/tag/${tag}`,
   zipUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
@@ -69,40 +30,18 @@ const manifest = {
   publishedAt: new Date().toISOString(),
 };
 
-// Desktop app installers (launcher/), downloaded into .output/launcher/ by the release workflow.
-const launcherDir = join(root, '.output', 'launcher');
-// upload-artifact keeps bundle subfolders (dmg/, nsis/, appimage/, deb/): attach the files inside, not the folders.
-const filesIn = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesIn(join(dir, e.name)) : [join(dir, e.name)]));
-const launcher = existsSync(launcherDir) ? filesIn(launcherDir) : [];
-
 if (dryRun) {
-  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${[zip, ...launcher].join(', ')}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
+  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${zip}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
   process.exit(0);
 }
 
 // Publishing twice must be harmless (a re-run, or a merge that kept an already released version): stop quietly.
-if (ghApi([`repos/${repo}/releases/tags/${tag}`], undefined, true)) {
+if (alreadyReleased(repo, tag)) {
   console.log(`${tag} is already released on ${repo}; nothing to publish.`);
   process.exit(0);
 }
 
-const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
-writeFileSync(notesFile, notes);
 console.log(`Publishing ${tag} to ${repo}`);
-// In CI (a merge into main) the tag is created on the merged commit; by hand, the tag must already be pushed.
-const target = process.env.GITHUB_SHA ? ['--target', process.env.GITHUB_SHA] : ['--verify-tag'];
-run('gh', ['release', 'create', tag, zip, ...launcher, '--repo', repo, ...target, '--title', tag, '--notes-file', notesFile]);
-
-// One commit per release on the `update` branch, holding update.json and nothing else.
-const parent = ghApi([`repos/${repo}/git/ref/heads/${branch}`], undefined, true)?.object?.sha ?? null;
-const tree = ghApi(['-X', 'POST', `repos/${repo}/git/trees`], {
-  tree: [{ path: 'update.json', mode: '100644', type: 'blob', content: `${JSON.stringify(manifest, null, 2)}\n` }],
-}).sha;
-const commit = ghApi(['-X', 'POST', `repos/${repo}/git/commits`], {
-  message: `chore: point update.json to ${tag}`,
-  tree,
-  parents: parent ? [parent] : [],
-}).sha;
-if (parent) ghApi(['-X', 'PATCH', `repos/${repo}/git/refs/heads/${branch}`], { sha: commit });
-else ghApi(['-X', 'POST', `repos/${repo}/git/refs`], { ref: `refs/heads/${branch}`, sha: commit });
+createRelease({ repo, tag, files: [zip], notes });
+writeUpdateJson(repo, branch, manifest, `chore: point update.json to ${tag}`);
 console.log(`update.json on ${branch} now points to ${tag}`);

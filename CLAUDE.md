@@ -22,7 +22,7 @@ Run typecheck + test before claiming work done; run test:e2e after touching back
 - `src/lib/limits.ts` hard safety limits.
 - `src/entrypoints/background.ts` orchestration; `facebook.content/` page driver; `options/`, `popup/` UI roots.
 - `launcher/` Connecttech desktop app (Tauri 2: Rust in `src-tauri/`, React UI in `src/`): installs and updates CAP in its own Chrome for Testing or the user's Chrome. `cargo test --manifest-path launcher/src-tauri/Cargo.toml`; real-network check `--test real_network -- --ignored`.
-- `.github/workflows/` release (on every merge into main: if package.json's version has no GitHub release yet, build the app installers, create tag + release, update update.json; otherwise skip) and launcher CI. To release, bump the version in package.json and launcher/src-tauri/Cargo.toml and add a CHANGELOG section in the PR.
+- `.github/workflows/release.yml`: on every merge into main, CAP and the app release separately. CAP releases `v<version>` when `package.json`'s version is new (zip + update.json, `scripts/release.mjs`, notes from `CHANGELOG.md`). The app releases `app-v<version>` when `launcher/package.json`'s version is new (installers for 4 targets + `app` in update.json, `scripts/release-app.mjs`, notes from `launcher/CHANGELOG.md`, never marked Latest). To release, bump only the version you changed in the PR (app: also `launcher/src-tauri/Cargo.toml`). `launcher.yml` builds/tests the app on PRs that touch `launcher/`.
 - `src/ui/` React components; styles in `src/ui/styles/` (abstracts, base, components, layout, pages).
 - `docs/` human docs; keep them in sync with behavior.
 

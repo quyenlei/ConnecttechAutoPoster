@@ -71,6 +71,16 @@ fn parse_version(text: &str) -> Option<[u64; 3]> {
     Some([parts[0].parse().ok()?, parts[1].parse().ok()?, parts[2].parse().ok()?])
 }
 
+/// The app's own latest version and release page (`app` in update.json, written by scripts/release-app.mjs).
+pub fn parse_app_latest(json: &str) -> Option<(String, String)> {
+    let body: serde_json::Value = serde_json::from_str(json).ok()?;
+    let app = body.get("app")?;
+    let version = app.get("version")?.as_str()?;
+    let page = app.get("pageUrl")?.as_str()?;
+    parse_version(version)?;
+    page.starts_with("https://github.com/").then(|| (version.to_string(), page.to_string()))
+}
+
 /// True when `latest` is a higher x.y.z than `current`. Unparsable versions are never newer.
 pub fn is_newer(latest: &str, current: &str) -> bool {
     match (parse_version(latest), parse_version(current)) {
@@ -146,6 +156,18 @@ mod tests {
         assert!(!is_newer("0.7.5", "0.7.5"));
         assert!(!is_newer("0.7.4", "0.7.5"));
         assert!(!is_newer("junk", "0.7.5"));
+    }
+
+    #[test]
+    fn reads_the_apps_own_latest_version() {
+        let body = r#"{"version":"0.8.2","pageUrl":"https://github.com/x","app":{"version":"1.0.1","pageUrl":"https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.0.1","downloads":{}}}"#;
+        assert_eq!(
+            parse_app_latest(body),
+            Some(("1.0.1".to_string(), "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.0.1".to_string()))
+        );
+        assert_eq!(parse_app_latest(r#"{"version":"0.8.2"}"#), None, "older update.json without app");
+        assert_eq!(parse_app_latest(r#"{"app":{"version":"1.0"}}"#), None);
+        assert_eq!(parse_app_latest(r#"{"app":{"version":"1.0.1","pageUrl":"https://evil.example/"}}"#), None, "github.com pages only");
     }
 
     #[test]
