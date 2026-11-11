@@ -49,6 +49,42 @@ function Test-AllowedUrl([string]$Url) {
   return $Url -match '^https://'
 }
 
+# Makes $To an exact copy of $From. Every file is overwritten: zips from wxt date every file 1980 and many files
+# keep their size between releases, so tools that compare size and time (robocopy, even with /IS /IT) skip changes.
+# The root manifest.json is copied last, so an interrupted copy still reports the old version and is retried.
+function Sync-Folder([string]$From, [string]$To) {
+  $fromRoot = [IO.Path]::GetFullPath($From).TrimEnd('\') + '\'
+  $toRoot = [IO.Path]::GetFullPath($To).TrimEnd('\') + '\'
+  [IO.Directory]::CreateDirectory($toRoot) | Out-Null
+  $all = 'AllDirectories'
+  $wanted = @{}
+  $last = $null
+  foreach ($file in [IO.Directory]::GetFiles($fromRoot, '*', $all)) {
+    $rel = $file.Substring($fromRoot.Length)
+    $wanted[$rel.ToLowerInvariant()] = $true
+    if ($rel -eq 'manifest.json') { $last = $file; continue }
+    Copy-OneFile $file (Join-Path $toRoot $rel)
+  }
+  foreach ($file in [IO.Directory]::GetFiles($toRoot, '*', $all)) {
+    if (-not $wanted.ContainsKey($file.Substring($toRoot.Length).ToLowerInvariant())) {
+      [IO.File]::SetAttributes($file, [IO.FileAttributes]::Normal)
+      [IO.File]::Delete($file)
+    }
+  }
+  foreach ($dir in [IO.Directory]::GetDirectories($toRoot, '*', $all)) {
+    if ([IO.Directory]::Exists($dir) -and -not [IO.Directory]::Exists((Join-Path $fromRoot $dir.Substring($toRoot.Length)))) {
+      [IO.Directory]::Delete($dir, $true)
+    }
+  }
+  if ($last) { Copy-OneFile $last (Join-Path $toRoot 'manifest.json') }
+}
+
+function Copy-OneFile([string]$Source, [string]$Target) {
+  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Target)) | Out-Null
+  if ([IO.File]::Exists($Target)) { [IO.File]::SetAttributes($Target, [IO.FileAttributes]::Normal) }
+  [IO.File]::Copy($Source, $Target, $true)
+}
+
 function Invoke-Update {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ('cap-update-' + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $tmp | Out-Null
@@ -81,10 +117,7 @@ function Invoke-Update {
     } catch { return @{ ok = $false; code = 'archive' } }
     if ($newVersion -ne $version) { return @{ ok = $false; code = 'archive' } }
 
-    New-Item -ItemType Directory -Force -Path $Ext | Out-Null
-    # /IS /IT: copy every file. Zips from wxt date every file 1980, so size/time comparison would skip changes.
-    & robocopy.exe $unpacked $Ext /MIR /IS /IT /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null
-    if ($LASTEXITCODE -ge 8) { return @{ ok = $false; code = 'folder' } }
+    try { Sync-Folder $unpacked $Ext } catch { return @{ ok = $false; code = 'folder'; detail = [string]$_.Exception.Message } }
     return @{ ok = $true; version = $version; changed = $true }
   } catch {
     # Unexpected failure: keep the reason for the log; CAP shows its own message for the code.
