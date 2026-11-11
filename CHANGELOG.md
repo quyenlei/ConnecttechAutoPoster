@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 ## [0.8.1] - 2026-11-11
 
 ### Fixed
+- The app's **Tôi đã làm xong** button (Chrome có sẵn guide) did nothing: the guide stayed on screen. It now moves on.
 - **macOS said "Connecttech.app is damaged and can't be opened".** Only the program inside was signed, not the app bundle, so Gatekeeper rejected the download as damaged. The whole bundle is now ad-hoc signed (`bundle.macOS.signingIdentity: "-"`, minimum macOS 11), and the release workflow checks the signature with `codesign --verify --deep --strict` before publishing. The app is still not notarized: macOS asks once, then **System Settings → Privacy & Security → Open Anyway**.
 
 ## [0.8.0] - 2026-11-11

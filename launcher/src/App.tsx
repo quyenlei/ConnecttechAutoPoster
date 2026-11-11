@@ -10,7 +10,7 @@ type View = 'main' | 'choose' | 'guide' | 'settings';
 
 const GUIDE_DONE = 'guideDone';
 
-function guideDone(): boolean {
+function readGuideDone(): boolean {
   try {
     return localStorage.getItem(GUIDE_DONE) === '1';
   } catch {
@@ -23,6 +23,8 @@ export default function App() {
   const [view, setView] = useState<View>('main');
   const [progress, setProgress] = useState<Partial<Record<Progress['item'], Progress>>>({});
   const [failure, setFailure] = useState<string | null>(null);
+  // In React state too: setting only localStorage would not re-render the guide away.
+  const [guideDone, setGuideDone] = useState(readGuideDone);
 
   useEffect(() => {
     void getStatus().then(setStatus);
@@ -45,6 +47,7 @@ export default function App() {
     setView('main');
     if (mode === 'chrome') {
       try { localStorage.removeItem(GUIDE_DONE); } catch { /* storage unavailable */ }
+      setGuideDone(false);
     }
     await run(async () => {
       setStatus(await setMode(mode));
@@ -54,6 +57,7 @@ export default function App() {
 
   function finishGuide() {
     try { localStorage.setItem(GUIDE_DONE, '1'); } catch { /* storage unavailable */ }
+    setGuideDone(true);
     setView('main');
   }
 
@@ -77,7 +81,7 @@ export default function App() {
         </div>
       </section>
     );
-  } else if (status.mode === 'chrome' && (view === 'guide' || !guideDone())) {
+  } else if (status.mode === 'chrome' && (view === 'guide' || !guideDone)) {
     content = <ChromeGuide extensionPath={status.extensionPath} onDone={finishGuide} />;
   } else {
     content = (
