@@ -4,6 +4,20 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-11
+
+### Changed
+- **The update check reads `update.json` first, so many people on one Wi-Fi no longer hit GitHub's limit.** GitHub's release API allows 60 requests an hour per IP address without login, and everyone behind the same network shares them (seen 2026-11-11: "API rate limit exceeded"). CAP now reads a small static file, `https://raw.githubusercontent.com/quyenlei/ConnecttechAutoPoster/update/update.json`, which GitHub serves from its CDN without that limit. The release API is asked only when that file cannot be read. Still one plain GET at most once a day plus **Kiểm tra cập nhật**, no cookies, only a version and github.com links kept; no permission was added. `raw.githubusercontent.com` is a new host for this request (owner decision, 2026-11-11).
+- When the API is limited, the message now says so and when to try again ("GitHub đang giới hạn lượt kiểm tra từ mạng của bạn, thử lại sau 11:23.") instead of "GitHub trả về lỗi 403.".
+
+### Added
+- **Releases are automatic.** Pushing a tag `v<version>` runs `.github/workflows/release.yml`: install, typecheck, unit tests, then `scripts/release.mjs` builds the zip, creates the GitHub release with this CHANGELOG section, and only after that writes `update.json` on the `update` branch. The tag must match `package.json`. `node scripts/release.mjs --dry-run` shows the notes and `update.json` without publishing.
+
+## [0.7.2] - 2026-11-11
+
+### Changed
+- Test release for the update check: same code as 0.7.1, only the version number changes. It was published from a commit outside the branches.
+
 ## [0.7.1] - 2026-11-11
 
 ### Changed

@@ -111,12 +111,19 @@ posted_meta = []  # per post: number of images, whether the preview card was sti
 comments = []
 comment_authors = []
 page_loads = []
-github_requests = []  # update checks: api.github.com is mapped to this mock as well
+github_requests = []  # update checks as 'host path': raw.githubusercontent.com and api.github.com are mapped to this mock as well
 LATEST_RELEASE = json.dumps({
     'tag_name': 'v99.0.0', 'draft': False, 'prerelease': False, 'published_at': '2026-11-11T00:00:00Z',
     'html_url': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v99.0.0',
     'assets': [{'name': 'connecttech-auto-poster-99.0.0-chrome.zip', 'browser_download_url': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v99.0.0/cap.zip'}],
 }).encode()
+UPDATE_JSON = json.dumps({
+    'version': '99.0.0', 'publishedAt': '2026-11-11T00:00:00Z',
+    'pageUrl': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v99.0.0',
+    'zipUrl': 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v99.0.0/cap.zip',
+}).encode()
+MANIFEST_PATH = '/quyenlei/ConnecttechAutoPoster/update/update.json'
+API_PATH = '/repos/quyenlei/ConnecttechAutoPoster/releases/latest'
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -125,11 +132,17 @@ class H(http.server.BaseHTTPRequestHandler):
             posted.append(q['t'][0])
             posted_meta.append({'n': int(q.get('n', ['0'])[0]), 'p': int(q.get('p', ['0'])[0]), 'names': q.get('names', [''])[0], 'i': q.get('i', [''])[0]})
             body, ctype = b'ok', 'text/plain'
-        elif self.headers.get('Host', '').startswith('api.github.com'):
-            github_requests.append(self.path)
-            ok = self.path == '/repos/quyenlei/ConnecttechAutoPoster/releases/latest'
-            body = LATEST_RELEASE if ok else b'{}'
-            self.send_response(200 if ok else 404); self.send_header('Content-Type', 'application/json')
+        elif self.headers.get('Host', '').startswith(('api.github.com', 'raw.githubusercontent.com')):
+            host = self.headers['Host'].split(':')[0]
+            github_requests.append(f'{host} {self.path}')
+            # update.json answers only the first check; later ones get a 503 so the API fallback is exercised too.
+            if host == 'raw.githubusercontent.com':
+                ok = self.path == MANIFEST_PATH and len(github_requests) == 1
+                body, status = (UPDATE_JSON, 200) if ok else (b'{}', 503)
+            else:
+                ok = self.path == API_PATH
+                body, status = (LATEST_RELEASE, 200) if ok else (b'{}', 404)
+            self.send_response(status); self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*'); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
             return
         elif self.path.startswith('/__comment'):
@@ -154,7 +167,7 @@ with sync_playwright() as p:
     ctx = p.chromium.launch_persistent_context(prof, executable_path=exe, headless=os.environ.get('E2E_HEADED') != '1',
         args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}", "--no-sandbox",
               "--ignore-certificate-errors",
-              "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP api.github.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
+              "--host-resolver-rules=MAP www.facebook.com 127.0.0.1:8443, MAP api.github.com 127.0.0.1:8443, MAP raw.githubusercontent.com 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
     # Test only: skip every wait between runs steps (post/comment delay, group break, Safety Break, retry) so the
     # suite does not sit through them. It runs in the test's extension pages, not in the extension: as soon as a
     # step is scheduled, it moves the stored run's `nextAt` to now and re-creates the alarm. Unpacked extensions may
@@ -533,7 +546,9 @@ with sync_playwright() as p:
     # The daily update check read the (mock) GitHub release, so the chat box offers the newer version.
     chat.locator("text=Có bản mới").wait_for(timeout=15000)
     assert chat.locator("a:has-text('Tải bản 99.0.0')").get_attribute('href').startswith('https://github.com/'), 'zip link must point to github.com'
-    assert len(github_requests) >= 2 and set(github_requests) == {'/repos/quyenlei/ConnecttechAutoPoster/releases/latest'}, github_requests
+    # First check: update.json only. The button's check found it unavailable (503) and asked the API instead.
+    manifest, api = f'raw.githubusercontent.com {MANIFEST_PATH}', f'api.github.com {API_PATH}'
+    assert github_requests[0] == manifest and api in github_requests and set(github_requests) == {manifest, api}, github_requests
     fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
     fb.click("cap-chat-host button[aria-label='Mở rộng']")
     chat.locator("button.shell__tab:has(span:text-is('Chiến dịch'))").wait_for(timeout=15000)
