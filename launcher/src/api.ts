@@ -2,18 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 
-export type Mode = 'browser' | 'chrome';
-
 /** Mirrors `Status` in src-tauri/src/commands.rs. */
 export interface Status {
-  mode: Mode | null;
-  platformSupported: boolean;
   capVersion: string | null;
-  browserVersion: string | null;
-  browserRunning: boolean;
-  /** CAP version waiting for the browser to close; "" when only the browser itself waits. */
-  pendingUpdate: string | null;
   extensionPath: string;
+  /** The user chose the folder Chrome already loads (else the app's own folder). */
+  customFolder: boolean;
   latest: string | null;
   appVersion: string;
   appUpdate: boolean;
@@ -24,7 +18,7 @@ export interface Status {
 }
 
 export interface Progress {
-  item: 'cap' | 'browser';
+  item: 'cap';
   done: number;
   total: number | null;
 }
@@ -33,11 +27,9 @@ export interface Progress {
 export const RELEASES_URL = 'https://github.com/quyenlei/ConnecttechAutoPoster/releases';
 
 export const getStatus = () => invoke<Status>('get_status');
-export const setMode = (mode: Mode) => invoke<Status>('set_mode', { mode });
 export const checkUpdates = () => invoke<void>('check_updates');
-export const launchBrowser = () => invoke<void>('launch_browser');
 export const openChrome = () => invoke<void>('open_chrome');
-/** Keep the CAP folder Chrome already loads up to date (mode Chrome có sẵn). Fails with "not-cap" for other folders. */
+/** Keep the CAP folder Chrome already loads up to date. Fails with "not-cap" for other folders. */
 export const useCapFolder = (path: string) => invoke<Status>('use_cap_folder', { path });
 /** Asks the user for a folder; null when cancelled. */
 export async function pickFolder(title: string): Promise<string | null> {
@@ -59,7 +51,7 @@ const MESSAGES: Record<string, string> = {
   'checksum-missing': 'Bản phát hành chưa có mã kiểm tra, nên chưa cài.',
   checksum: 'File tải về không khớp mã kiểm tra, nên chưa cài. Hãy thử lại sau.',
   archive: 'File tải về bị lỗi, nên chưa cài.',
-  folder: 'Không ghi được vào thư mục của app. Hãy đóng trình duyệt của app rồi thử lại.',
+  folder: 'Không ghi được vào thư mục CAP. Kiểm tra quyền ghi của thư mục rồi thử lại.',
   'not-cap': 'Thư mục này không phải thư mục CAP (không có manifest.json của Connecttech Auto Poster). Hãy chọn đúng thư mục ghi ở mục "Loaded from" của CAP trong chrome://extensions.',
   'chrome-missing': 'Không mở được Google Chrome. Hãy mở Chrome bằng tay.',
   busy: 'App đang làm việc khác, chờ một chút rồi thử lại.',

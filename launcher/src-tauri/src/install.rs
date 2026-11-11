@@ -139,7 +139,7 @@ pub(crate) fn extract(zip: &Path, to: &Path) -> std::io::Result<()> {
         #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
-            // Keep executables runnable (Chrome for Testing), and every file readable by the user.
+            // Keep executables runnable, and every file readable by the user.
             std::fs::set_permissions(&out, std::fs::Permissions::from_mode((mode & 0o777) | 0o600))?;
         }
     }

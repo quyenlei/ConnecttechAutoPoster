@@ -3,11 +3,10 @@ import { openDataFolder, readLog, type Status } from '../api';
 
 interface Props {
   status: Status;
-  onChangeMode: () => void;
   onClose: () => void;
 }
 
-export function Settings({ status, onChangeMode, onClose }: Props) {
+export function Settings({ status, onClose }: Props) {
   const [log, setLog] = useState('');
   useEffect(() => {
     void readLog().then(setLog);
@@ -18,10 +17,6 @@ export function Settings({ status, onChangeMode, onClose }: Props) {
       <h1 id="settings-title" className="screen__title">Cài đặt</h1>
       <dl className="facts">
         <div className="facts__row">
-          <dt>Cách dùng</dt>
-          <dd>{status.mode === 'browser' ? 'Trình duyệt riêng' : 'Chrome có sẵn'}</dd>
-        </div>
-        <div className="facts__row">
           <dt>Phiên bản app</dt>
           <dd>{status.appVersion}</dd>
         </div>
@@ -31,7 +26,6 @@ export function Settings({ status, onChangeMode, onClose }: Props) {
         </div>
       </dl>
       <div className="screen__actions">
-        <button className="button" type="button" onClick={onChangeMode} disabled={status.browserRunning}>Đổi cách dùng</button>
         <button className="button" type="button" onClick={() => void openDataFolder()}>Mở thư mục dữ liệu</button>
         <button className="button button--link" type="button" onClick={onClose}>Quay lại</button>
       </div>

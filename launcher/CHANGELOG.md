@@ -7,6 +7,9 @@ new version here (`launcher/package.json` and `src-tauri/Cargo.toml`). CAP's cha
 
 ## [1.1.0] - 2026-11-11
 
+### Removed
+- **The "Trình duyệt riêng" mode** (owner decision): the app no longer downloads or starts Chrome for Testing. It works only with your own Chrome, and asks no question at start. Settings from 1.0.0 still load. If you used that mode: export a backup in that window first (tab **Sao lưu**), then load CAP in your Chrome and import it; the old browser and its profile stay in the app's data folder until you delete them (Cài đặt → **Mở thư mục dữ liệu**, folders `browser` and `profile`).
+
 ### Added
 - **Keep the CAP you already use up to date.** In "Chrome có sẵn", the new **Chọn thư mục CAP đang dùng** button lets you pick the folder Chrome already loads CAP from (shown as *Loaded from* in CAP's details on `chrome://extensions`). The app then updates that folder directly: no removing, no Load unpacked again, data stays, and CAP (0.8.0 or later) reloads itself into the new version when no run is active (it checks hourly; ⟳ on its card in `chrome://extensions` applies it at once). Only a folder whose `manifest.json` is Connecttech Auto Poster is accepted, because updating replaces every file in it.
 - Verified: CAP 0.8.0 running in Chrome for Testing with Developer mode, its folder replaced by 1.0.0, reloads itself into 1.0.0.

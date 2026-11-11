@@ -1,7 +1,5 @@
-//! Connecttech launcher: installs and updates Connecttech Auto Poster (CAP), either in its own Chrome for Testing
-//! window or in the user's Chrome. See docs/superpowers/specs/2026-11-11-connecttech-launcher-design.md.
+//! Connecttech launcher: installs and updates Connecttech Auto Poster (CAP) for the user's own Chrome. See docs/superpowers/specs/2026-11-11-connecttech-launcher-design.md.
 
-pub mod browser;
 mod commands;
 pub mod install;
 pub mod release;
@@ -22,9 +20,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
-            commands::set_mode,
             commands::check_updates,
-            commands::launch_browser,
             commands::use_cap_folder,
             commands::open_chrome,
             commands::open_data_folder,
