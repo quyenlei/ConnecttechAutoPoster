@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-11
+
+### Fixed
+- The app's **Tôi đã làm xong** button (Chrome có sẵn guide) did nothing: the guide stayed on screen. It now moves on.
+- Releases: a merge into `main` whose version is already released now ends quietly instead of failing ("a release with the same tag name already exists"). The release check reads GitHub's answer explicitly (200 skip, 404 release, anything else stops with the error) instead of treating every error as "not released".
+
 ## [0.8.1] - 2026-11-11
 
 ### Fixed

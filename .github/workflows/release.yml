@@ -36,13 +36,14 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "new=false" >> "$GITHUB_OUTPUT"
-            echo "v$version is already released; nothing to do."
-          else
-            echo "new=true" >> "$GITHUB_OUTPUT"
-            echo "Releasing v$version."
-          fi
+          # 200: released already, skip. 404: new version, release. Anything else: stop and show why.
+          status=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" --silent -i 2>/dev/null | head -1 | awk '{print $2}')
+          echo "GitHub answered $status for v$version"
+          case "$status" in
+            200) echo "new=false" >> "$GITHUB_OUTPUT"; echo "v$version is already released; nothing to do." ;;
+            404) echo "new=true" >> "$GITHUB_OUTPUT"; echo "Releasing v$version." ;;
+            *) gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" --silent; echo "Could not tell whether v$version exists."; exit 1 ;;
+          esac
 
   launcher:
     name: app (${{ matrix.name }})
