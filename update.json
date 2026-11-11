@@ -1,9 +1,9 @@
 {
-  "version": "0.8.2",
-  "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v0.8.2",
-  "zipUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v0.8.2/connecttech-auto-poster-0.8.2-chrome.zip",
-  "sha256": "c082e97c8be5fd36943ad06e6bdb955453095522101c2d3f9e806c7a3b546bc9",
-  "publishedAt": "2026-11-11T09:48:02.444Z",
+  "version": "1.0.0",
+  "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v1.0.0",
+  "zipUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/v1.0.0/connecttech-auto-poster-1.0.0-chrome.zip",
+  "sha256": "298a9b1afe5f0e52a9a121bccec51a807d4e93d9e667eea4895229fb572f0344",
+  "publishedAt": "2026-11-11T10:20:44.495Z",
   "app": {
     "version": "1.0.0",
     "pageUrl": "https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/app-v1.0.0",
