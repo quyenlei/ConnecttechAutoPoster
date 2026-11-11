@@ -101,6 +101,7 @@ run = subprocess.run(installer, capture_output=True, env=env, timeout=600, shell
 assert run.returncode == 0, run.stdout.decode(errors='replace') + run.stderr.decode(errors='replace')
 manifest = host_manifest()
 assert manifest['name'] == HOST and manifest['type'] == 'stdio' and manifest['allowed_origins'] == [f'chrome-extension://{ID}/'], manifest
+assert os.path.exists(os.path.join(ext, 'manifest.json')), 'installer output:\n' + run.stdout.decode(errors='replace') + run.stderr.decode(errors='replace')
 assert installed_version() == '9.9.1' and os.path.exists(os.path.join(ext, 'old.js'))
 print('install ok')
 

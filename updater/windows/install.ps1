@@ -45,8 +45,8 @@ try {
 } catch { Fail 'Không đăng ký được với Chrome.' }
 
 Write-Host 'Đang tải bản CAP mới nhất từ GitHub...'
-$result = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $Updater 'cap-updater.ps1') --install
-if ($LASTEXITCODE -ne 0) { Fail ("Không tải được CAP ($result). Kiểm tra mạng rồi chạy lại.") }
+$result = (& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $Updater 'cap-updater.ps1') install | Out-String).Trim()
+if ($result -notmatch '"ok":\s*true') { Fail ("Không tải được CAP ($result). Kiểm tra mạng rồi chạy lại.") }
 
 Write-Host ''
 Write-Host 'Xong. CAP nằm trong thư mục:' -ForegroundColor Green

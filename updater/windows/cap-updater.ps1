@@ -6,7 +6,8 @@
 #                        releases on github.com, checks its SHA-256, and mirrors it into the extension folder:
 #                        {"ok":true,"version":"x.y.z","changed":true|false} or {"ok":false,"code":"<reason>"}
 # It never runs anything it downloads; Chrome loads the new files when the extension reloads itself.
-# `cap-updater.ps1 --install` does the same update from a console (used by install.ps1).
+# `cap-updater.ps1 install` does the same update from a console (used by install.ps1). A plain word, not
+# `--install`: Windows PowerShell's -File parsing does not pass double-dash arguments through reliably.
 # Windows PowerShell 5.1 compatible. ASCII only. CAP_* environment variables override paths and URLs for tests only.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -83,7 +84,7 @@ function Invoke-Update {
 
 function ConvertTo-Reply($Table) { return (New-Object PSObject -Property $Table) | ConvertTo-Json -Compress }
 
-if ($args.Count -gt 0 -and $args[0] -eq '--install') {
+if ($args.Count -gt 0 -and $args[0] -eq 'install') {
   $result = ConvertTo-Reply (Invoke-Update)
   Write-Log ('install: ' + $result)
   Write-Output $result
