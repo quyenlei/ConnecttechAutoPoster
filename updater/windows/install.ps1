@@ -25,7 +25,7 @@ Write-Host 'Đang cài trình cập nhật Connecttech Auto Poster...'
 try {
   New-Item -ItemType Directory -Force -Path $Updater, $Ext | Out-Null
   Copy-Item -Force -Path (Join-Path $Here 'cap-updater.ps1') -Destination (Join-Path $Updater 'cap-updater.ps1')
-  Unblock-File -Path (Join-Path $Updater 'cap-updater.ps1') -ErrorAction SilentlyContinue
+  try { Unblock-File -Path (Join-Path $Updater 'cap-updater.ps1') } catch { }
   $bat = "@echo off`r`npowershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"%~dp0cap-updater.ps1`" %*`r`n"
   [IO.File]::WriteAllText((Join-Path $Updater 'cap-updater.bat'), $bat, (New-Object Text.ASCIIEncoding))
 } catch { Fail 'Không chép được chương trình cập nhật.' }

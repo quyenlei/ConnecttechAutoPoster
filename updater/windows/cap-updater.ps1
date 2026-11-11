@@ -19,6 +19,17 @@ $LogFile = Join-Path $Root 'updater\updater.log'
 $ManifestUrl = if ($env:CAP_UPDATE_MANIFEST_URL) { $env:CAP_UPDATE_MANIFEST_URL } else { 'https://raw.githubusercontent.com/quyenlei/ConnecttechAutoPoster/update/update.json' }
 $DownloadPrefix = if ($env:CAP_DOWNLOAD_PREFIX) { $env:CAP_DOWNLOAD_PREFIX } else { 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/download/' }
 $AllowHttp = $env:CAP_UPDATER_ALLOW_HTTP -eq '1'
+# Hashing and unzipping use .NET directly: cmdlets such as Get-FileHash and Expand-Archive live in modules that
+# Windows PowerShell may fail to load when started from PowerShell 7 (inherited PSModulePath).
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function Get-Sha256([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    return ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+  } finally { $stream.Dispose() }
+}
 
 function Write-Log([string]$Text) {
   try {
@@ -61,11 +72,11 @@ function Invoke-Update {
 
     $zipFile = Join-Path $tmp 'cap.zip'
     try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -Uri $zip -OutFile $zipFile } catch { return @{ ok = $false; code = 'network' } }
-    if ((Get-FileHash -Algorithm SHA256 -Path $zipFile).Hash.ToLowerInvariant() -ne $sha) { return @{ ok = $false; code = 'checksum' } }
+    if ((Get-Sha256 $zipFile) -ne $sha) { return @{ ok = $false; code = 'checksum' } }
 
     $unpacked = Join-Path $tmp 'x'
     try {
-      Expand-Archive -Path $zipFile -DestinationPath $unpacked -Force
+      [IO.Compression.ZipFile]::ExtractToDirectory($zipFile, $unpacked)
       $newVersion = [string]((Get-Content -Raw -Encoding UTF8 (Join-Path $unpacked 'manifest.json') | ConvertFrom-Json).version)
     } catch { return @{ ok = $false; code = 'archive' } }
     if ($newVersion -ne $version) { return @{ ok = $false; code = 'archive' } }
