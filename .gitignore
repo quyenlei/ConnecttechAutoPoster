@@ -7,3 +7,4 @@ stats.html
 .DS_Store
 .e2e-profile
 docs/
+.claude/
