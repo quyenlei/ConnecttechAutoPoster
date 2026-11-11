@@ -117,7 +117,7 @@ print('ping ok')
 # 3. Update mirrors the new release (stale files removed); a second update changes nothing.
 publish('9.9.2', extra='new.js')
 assert native({'type': 'update'}) == {'ok': True, 'version': '9.9.2', 'changed': True}
-assert installed_version() == '9.9.2' and os.path.exists(os.path.join(ext, 'new.js')) and not os.path.exists(os.path.join(ext, 'old.js'))
+assert installed_version() == '9.9.2' and os.path.exists(os.path.join(ext, 'new.js')) and not os.path.exists(os.path.join(ext, 'old.js')), (installed_version(), sorted(os.listdir(ext)), open(os.path.join(home, 'cap', 'updater', 'updater.log'), encoding='utf-8', errors='replace').read())
 assert native({'type': 'update'}) == {'ok': True, 'version': '9.9.2', 'changed': False}
 assert all(os.access(os.path.join(ext, n), os.R_OK) for n in os.listdir(ext)), 'extracted files must be readable'
 print('update ok')
