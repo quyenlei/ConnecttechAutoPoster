@@ -3,6 +3,7 @@ import { LIMITS } from './limits';
 import type { BackupData } from './backup';
 import { IDLE_RUN, isActive } from './run-engine';
 import type { UpdateState } from './update';
+import type { UpdaterState } from './updater';
 import type { Campaign, CommentTab, Group, JoinedScan, LogEntry, RunState, SafeScanResults, Settings } from './types';
 
 /** All data stays in chrome.storage.local on this device. Nothing is sent anywhere. */
@@ -31,6 +32,8 @@ export const chatboxItem = storage.defineItem<ChatboxState>('local:chatbox', { f
 export const commentLockItem = storage.defineItem<number | null>('local:commentLock', { fallback: null });
 /** Result of the last update check (latest version and its GitHub links). Never exported in a backup. */
 export const updateItem = storage.defineItem<UpdateState | null>('local:update', { fallback: null });
+/** What CAP last learned from the optional updater helper (lib/updater.ts). */
+export const updaterItem = storage.defineItem<UpdaterState | null>('local:updater', { fallback: null });
 /** Epoch ms of the last time due schedule slots were processed. */
 export const scheduleCheckItem = storage.defineItem<number | null>('local:scheduleCheck', { fallback: null });
 

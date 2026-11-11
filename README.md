@@ -37,6 +37,8 @@ pnpm build      # production build in .output/chrome-mv3
 
 Install manually: open `chrome://extensions`, enable **Developer mode**, **Load unpacked**, select `.output/chrome-mv3`. Log in to Facebook in the same Chrome profile, then click the extension icon and **Open dashboard**.
 
+For users (Windows or macOS): download `cap-updater-windows.zip` or `cap-updater-mac.zip` from the [latest release](https://github.com/quyenlei/ConnecttechAutoPoster/releases/latest), unzip it and run `install.bat` or `install.command`. It installs CAP into a fixed folder to load with **Load unpacked**; later versions then install with **Cập nhật ngay** in CAP.
+
 ## Using it
 
 1. **Groups** tab: paste links such as `https://www.facebook.com/groups/example | My group`.

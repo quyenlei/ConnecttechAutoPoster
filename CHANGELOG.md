@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-11-11
+
+### Added
+- **One-click updates on Windows and macOS** (owner decision). A small updater helper, installed once from the release (`cap-updater-windows.zip` → `install.bat`, `cap-updater-mac.zip` → `install.command`), registers with Chrome as native messaging host `com.connecttech.cap_updater` for the current user, allowed only for CAP. **Có bản mới** then shows **Cập nhật ngay**: after confirming, the helper downloads the zip named in `update.json` from the CAP releases on github.com, checks its SHA-256 and version, replaces CAP's folder, and CAP reloads itself. Data stays. Refused while a run is active. Without the helper CAP links its installer for the user's system and keeps the manual steps. New permission `nativeMessaging`; see SAFETY_AND_PRIVACY.
+- The manifest has a `key`, so CAP's ID is now fixed (`ebembjpemaickbaogincmeajpgeabcbh`). **Moving to 0.7.4 changes the ID once, so CAP starts empty: export a backup in the old version first and import it in the new one.** Later updates keep the data.
+- Releases attach both installers and write the zip's SHA-256 into `update.json`.
+- Tests: `pnpm test:updater` runs the real installer and helper against a local mock (install, ping, update, refusals for wrong checksum, missing checksum, foreign URL, network); `.github/workflows/updater.yml` runs it on Windows and macOS, and on macOS also `e2e/updater_e2e.py`, which presses **Cập nhật ngay** in Chromium and checks that CAP comes back as the new version. The Windows helper is verified only in CI, not on a real user's PC yet.
+
 ## [0.7.3] - 2026-11-11
 
 ### Changed

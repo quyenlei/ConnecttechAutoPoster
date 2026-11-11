@@ -1,11 +1,13 @@
 // Publishes the current version for the in-extension update check (normally run by .github/workflows/release.yml
 // when a tag `v<version>` is pushed; it also works by hand with the GitHub CLI logged in):
-// 1. zips the build and creates the GitHub release `v<version>` in the public CAP repository (UPDATE_REPO in
-//    src/lib/update.ts), with the CHANGELOG section of that version as notes; the tag must already be pushed;
+// 1. zips the build and the updater helper's installers (updater/), and creates the GitHub release `v<version>` in
+//    the public CAP repository (UPDATE_REPO in src/lib/update.ts) with them attached and the CHANGELOG section of
+//    that version as notes; the tag must already be pushed;
 // 2. only then points `update.json` on the `update` branch (UPDATE_BRANCH) at that release, so CAP never
-//    announces a version whose zip does not exist yet.
-// It does not bump the version. `--dry-run` prints the notes and update.json without publishing anything.
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+//    announces a version whose zip does not exist yet. update.json carries the zip's SHA-256 for the helper.
+// It does not bump the version. `--dry-run` builds the zips and prints the notes and update.json without publishing.
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,26 +54,40 @@ const next = changelog.indexOf('\n## [', start + 1);
 const notes = changelog.slice(changelog.indexOf('\n', start) + 1, next === -1 ? undefined : next).trim();
 
 const zipName = `${name}-${version}-chrome.zip`;
-const manifest = {
-  version,
-  pageUrl: `https://github.com/${repo}/releases/tag/${tag}`,
-  zipUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
-  publishedAt: new Date().toISOString(),
-};
-
-if (dryRun) {
-  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
-  process.exit(0);
-}
-
 run('pnpm', ['exec', 'wxt', 'zip']);
 const zip = join(root, '.output', zipName);
 if (!existsSync(zip)) throw new Error(`Zip not found: ${zip}`);
 
+// The helper's installers, under fixed names so releases/latest/download/<name> always works.
+// `zip -X` leaves out extra file attributes but keeps the Unix permissions the macOS scripts need.
+const installers = [
+  ['cap-updater-windows.zip', 'updater/windows', ['install.bat', 'install.ps1', 'cap-updater.ps1']],
+  ['cap-updater-mac.zip', 'updater/mac', ['install.command', 'cap-updater.sh']],
+].map(([file, dir, names]) => {
+  const out = join(root, '.output', file);
+  rmSync(out, { force: true });
+  const result = spawnSync('zip', ['-X', '-q', out, ...names], { cwd: join(root, dir), stdio: 'inherit' });
+  if (result.status !== 0) throw new Error(`Could not zip ${dir}`);
+  return out;
+});
+
+const manifest = {
+  version,
+  pageUrl: `https://github.com/${repo}/releases/tag/${tag}`,
+  zipUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
+  sha256: createHash('sha256').update(readFileSync(zip)).digest('hex'),
+  publishedAt: new Date().toISOString(),
+};
+
+if (dryRun) {
+  console.log(`Dry run: ${tag} to ${repo}\n\n${notes}\n\nAssets: ${[zip, ...installers].join(', ')}\n\nupdate.json on ${branch}:\n${JSON.stringify(manifest, null, 2)}`);
+  process.exit(0);
+}
+
 const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
 writeFileSync(notesFile, notes);
 console.log(`Publishing ${tag} to ${repo}`);
-run('gh', ['release', 'create', tag, zip, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]);
+run('gh', ['release', 'create', tag, zip, ...installers, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]);
 
 // One commit per release on the `update` branch, holding update.json and nothing else.
 const parent = ghApi([`repos/${repo}/git/ref/heads/${branch}`], undefined, true)?.object?.sha ?? null;
