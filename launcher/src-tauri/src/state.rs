@@ -19,6 +19,9 @@ pub struct Settings {
     /// Unix seconds of the last update check.
     #[serde(default)]
     pub last_check: u64,
+    /// Mode "Chrome có sẵn": the CAP folder Chrome already loads, chosen by the user, instead of the app's own.
+    #[serde(default)]
+    pub chrome_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +36,14 @@ pub fn extension_dir(data: &Path, mode: Mode) -> PathBuf {
     match mode {
         Mode::Browser => data.join("extension"),
         Mode::Chrome => data.join("chrome-extension"),
+    }
+}
+
+/// The folder the app keeps up to date for these settings.
+pub fn cap_dir(data: &Path, settings: &Settings) -> Option<PathBuf> {
+    match settings.mode? {
+        Mode::Chrome => Some(settings.chrome_dir.clone().unwrap_or_else(|| extension_dir(data, Mode::Chrome))),
+        Mode::Browser => Some(extension_dir(data, Mode::Browser)),
     }
 }
 
@@ -98,10 +109,22 @@ mod tests {
     }
 
     #[test]
+    fn updates_the_folder_chrome_already_loads_when_one_was_chosen() {
+        let data = Path::new("/data");
+        let mut settings = Settings { mode: Some(Mode::Chrome), ..Settings::default() };
+        assert_eq!(cap_dir(data, &settings), Some(data.join("chrome-extension")));
+        settings.chrome_dir = Some(PathBuf::from("/Users/me/CAP"));
+        assert_eq!(cap_dir(data, &settings), Some(PathBuf::from("/Users/me/CAP")));
+        settings.mode = Some(Mode::Browser);
+        assert_eq!(cap_dir(data, &settings), Some(data.join("extension")), "the app's own browser keeps its folder");
+        assert_eq!(cap_dir(data, &Settings::default()), None);
+    }
+
+    #[test]
     fn settings_round_trip_and_default_when_missing() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(load_settings(dir.path()), Settings::default());
-        let settings = Settings { mode: Some(Mode::Chrome), last_check: 42 };
+        let settings = Settings { mode: Some(Mode::Chrome), last_check: 42, chrome_dir: Some(PathBuf::from("/x")) };
         save_settings(dir.path(), &settings).unwrap();
         assert_eq!(load_settings(dir.path()), settings);
         let text = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();

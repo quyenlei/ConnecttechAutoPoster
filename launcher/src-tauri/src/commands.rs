@@ -1,9 +1,9 @@
 //! Tauri commands and events: the UI calls these; progress and status changes come back as events.
 
 use crate::browser::{self, BrowserBuild};
-use crate::install::{fetch_text, install_release, installed_version};
+use crate::install::{fetch_text, install_release, installed_version, is_cap_folder};
 use crate::release::{is_newer, parse_app_latest, parse_release, ErrorCode, Release, UPDATE_JSON_URL};
-use crate::state::{decide, extension_dir, load_settings, save_settings, Action, Mode, Settings};
+use crate::state::{cap_dir, decide, extension_dir, load_settings, save_settings, Action, Mode, Settings};
 use serde::Serialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -91,6 +91,12 @@ impl AppState {
         self.settings.lock().unwrap().mode
     }
 
+    /// The CAP folder kept up to date in `mode`: the app's own, or (Chrome có sẵn) the one the user chose.
+    fn target_dir(&self, mode: Mode) -> PathBuf {
+        let settings = self.settings.lock().unwrap();
+        cap_dir(&self.data, &Settings { mode: Some(mode), ..settings.clone() }).unwrap_or_else(|| extension_dir(&self.data, mode))
+    }
+
     /// The launcher's browser is open: the one this session started, or one still open from an earlier session
     /// (found by its program living in `<data>/browser`).
     fn running(&self) -> bool {
@@ -125,7 +131,7 @@ impl AppState {
 
     fn status(&self, app: &AppHandle) -> Status {
         let mode = self.mode();
-        let ext = extension_dir(&self.data, mode.unwrap_or(Mode::Chrome));
+        let ext = self.target_dir(mode.unwrap_or(Mode::Chrome));
         let pending = self.pending.lock().unwrap();
         let latest = self.latest.lock().unwrap().clone();
         let app_version = app.package_info().version.to_string();
@@ -214,7 +220,7 @@ async fn apply_browser(app: &AppHandle, build: &BrowserBuild) -> Result<(), Erro
 
 async fn apply_cap(app: &AppHandle, release: &Release, mode: Mode) -> Result<(), ErrorCode> {
     let state = app.state::<AppState>();
-    let target = extension_dir(&state.data, mode);
+    let target = state.target_dir(mode);
     install_release(&state.client, release, &state.data.join("staging"), &target, progress(app, "cap")).await.map(|_| ())
 }
 
@@ -227,7 +233,7 @@ async fn check_and_apply(app: &AppHandle) -> Result<(), ErrorCode> {
     let release = parse_release(&body, state.test)?;
     *state.latest.lock().unwrap() = Some(release.version.clone());
     let running = state.running();
-    let installed = installed_version(&extension_dir(&state.data, mode));
+    let installed = installed_version(&state.target_dir(mode));
     match decide(mode, running, installed.as_deref(), &release.version) {
         Action::Apply => apply_cap(app, &release, mode).await?,
         Action::Defer => state.pending.lock().unwrap().cap = Some(release),
@@ -367,6 +373,24 @@ fn watch_browser(app: AppHandle) {
 
 /// Starts the user's own Chrome (mode 2). Chrome refuses chrome:// addresses from outside, so the UI copies
 /// `chrome://extensions` for the user to paste.
+/// Mode "Chrome có sẵn": keep the CAP folder Chrome already loads up to date, instead of the app's own folder.
+/// Only a folder holding CAP is accepted, because updating replaces every file in it.
+#[tauri::command]
+pub fn use_cap_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<Status, String> {
+    let dir = PathBuf::from(path);
+    if !is_cap_folder(&dir) {
+        return Err("not-cap".into());
+    }
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.mode = Some(Mode::Chrome);
+        settings.chrome_dir = Some(dir.clone());
+        save_settings(&state.data, &settings).map_err(|_| "folder".to_string())?;
+    }
+    state.log(&format!("cap folder: {}", dir.display()));
+    Ok(state.status(&app))
+}
+
 #[tauri::command]
 pub fn open_chrome() -> Result<(), String> {
     let started = if cfg!(target_os = "macos") {
@@ -401,7 +425,7 @@ pub fn start_background_checks(app: AppHandle) {
             let due = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock().unwrap();
-                let installed = settings.mode.is_some_and(|m| installed_version(&extension_dir(&state.data, m)).is_some());
+                let installed = cap_dir(&state.data, &settings).is_some_and(|dir| installed_version(&dir).is_some());
                 installed && now().saturating_sub(settings.last_check) >= CHECK_EVERY.as_secs()
             };
             if due {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { checkUpdates, errorMessage, getStatus, launchBrowser, onProgress, onStatus, setMode, type Mode, type Progress, type Status } from './api';
+import { checkUpdates, errorMessage, getStatus, launchBrowser, onProgress, onStatus, pickFolder, setMode, useCapFolder, type Mode, type Progress, type Status } from './api';
 import { ChooseMode } from './screens/ChooseMode';
 import { ChromeGuide } from './screens/ChromeGuide';
 import { Installing } from './screens/Installing';
@@ -55,6 +55,17 @@ export default function App() {
     });
   }
 
+  /** Chrome already loads CAP from a folder: keep that one up to date (no reinstall, data stays). */
+  async function adoptFolder() {
+    const path = await pickFolder('Chọn thư mục CAP mà Chrome đang dùng (Loaded from)');
+    if (!path) return;
+    await run(async () => {
+      setStatus(await useCapFolder(path));
+      finishGuide();
+      await checkUpdates();
+    });
+  }
+
   function finishGuide() {
     try { localStorage.setItem(GUIDE_DONE, '1'); } catch { /* storage unavailable */ }
     setGuideDone(true);
@@ -82,7 +93,7 @@ export default function App() {
       </section>
     );
   } else if (status.mode === 'chrome' && (view === 'guide' || !guideDone)) {
-    content = <ChromeGuide extensionPath={status.extensionPath} onDone={finishGuide} />;
+    content = <ChromeGuide extensionPath={status.extensionPath} onDone={finishGuide} onAdopt={() => void adoptFolder()} />;
   } else {
     content = (
       <Ready
@@ -91,6 +102,7 @@ export default function App() {
         onCheck={() => void run(checkUpdates)}
         onGuide={() => setView('guide')}
         onSettings={() => setView('settings')}
+        onAdopt={() => void adoptFolder()}
       />
     );
   }

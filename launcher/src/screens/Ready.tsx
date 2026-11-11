@@ -7,10 +7,11 @@ interface Props {
   onCheck: () => void;
   onGuide: () => void;
   onSettings: () => void;
+  onAdopt: () => void;
 }
 
 /** Main screen once CAP is installed. */
-export function Ready({ status, onLaunch, onCheck, onGuide, onSettings }: Props) {
+export function Ready({ status, onLaunch, onCheck, onGuide, onSettings, onAdopt }: Props) {
   const browserMode = status.mode === 'browser';
   return (
     <section className="screen" aria-labelledby="ready-title">
@@ -39,9 +40,15 @@ export function Ready({ status, onLaunch, onCheck, onGuide, onSettings }: Props)
         </p>
       )}
       {!browserMode && (
-        <p className="screen__lead">
-          Mở CAP trong Chrome như bình thường. Khi app cập nhật, CAP tự tải lại lúc không có lượt chạy nào.
-        </p>
+        <>
+          <p className="screen__lead">
+            Mở CAP trong Chrome như bình thường. Khi app cập nhật, CAP tự tải lại lúc không có lượt chạy nào.
+          </p>
+          <p className="screen__lead">
+            Thư mục app cập nhật: <code>{status.extensionPath}</code>. Nếu Chrome nạp CAP từ thư mục khác (xem <strong>Loaded from</strong> trong
+            chi tiết CAP ở <code>chrome://extensions</code>), hãy chọn thư mục đó.
+          </p>
+        </>
       )}
       {status.appUpdate && (
         <p className="notice" role="status">
@@ -58,7 +65,10 @@ export function Ready({ status, onLaunch, onCheck, onGuide, onSettings }: Props)
             {status.browserRunning ? 'CAP đang mở' : 'Mở CAP'}
           </button>
         ) : (
-          <button className="button" type="button" onClick={onGuide}>Xem lại hướng dẫn nạp CAP</button>
+          <>
+            <button className="button" type="button" onClick={onAdopt} disabled={status.busy}>Chọn thư mục CAP đang dùng</button>
+            <button className="button" type="button" onClick={onGuide}>Xem lại hướng dẫn nạp CAP</button>
+          </>
         )}
         <button className="button" type="button" onClick={onCheck} disabled={status.busy}>
           {status.busy ? 'Đang kiểm tra…' : 'Kiểm tra cập nhật'}

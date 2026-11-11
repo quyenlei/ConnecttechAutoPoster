@@ -16,6 +16,16 @@ pub fn installed_version(dir: &Path) -> Option<String> {
     json.get("version")?.as_str().map(str::to_string)
 }
 
+/// True when `dir` holds CAP (its manifest names Connecttech Auto Poster). The app replaces every file in the CAP
+/// folder, so it must never adopt any other folder.
+pub fn is_cap_folder(dir: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(dir.join("manifest.json")) else { return false };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|m| m.get("name").and_then(|n| n.as_str()).map(|n| n == "Connecttech Auto Poster"))
+        .unwrap_or(false)
+}
+
 /// GETs and validates `update.json`.
 pub async fn fetch_release(client: &reqwest::Client, url: &str, allow_http: bool) -> Result<Release, ErrorCode> {
     parse_release(&fetch_text(client, url).await?, allow_http)
@@ -450,6 +460,17 @@ pub(crate) mod tests {
         assert_eq!(std::fs::read_to_string(to.join("background.js")).unwrap(), "new");
         assert_eq!(std::fs::read_to_string(dir.path().join("elsewhere.js")).unwrap(), "old");
         assert!(files_in(&to).unwrap().iter().all(|p| !p.to_string_lossy().ends_with(".capnew")), "no temp files left");
+    }
+
+    #[test]
+    fn adopts_only_a_cap_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_cap_folder(dir.path()), "empty folder");
+        std::fs::write(dir.path().join("manifest.json"), r#"{"manifest_version":3,"name":"Other Extension","version":"1.0.0"}"#).unwrap();
+        assert!(!is_cap_folder(dir.path()), "another extension");
+        std::fs::write(dir.path().join("manifest.json"), r#"{"manifest_version":3,"name":"Connecttech Auto Poster","version":"0.8.0"}"#).unwrap();
+        assert!(is_cap_folder(dir.path()));
+        assert!(!is_cap_folder(&dir.path().join("missing")));
     }
 
     #[test]
