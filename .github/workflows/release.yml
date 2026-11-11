@@ -1,30 +1,53 @@
-# Release pipeline.
-# - Push a tag v<version> (matching package.json, with a CHANGELOG section): build the Connecttech app for Windows,
-#   macOS (Apple silicon and Intel) and Linux, then create the GitHub release with the CAP zip and the app
-#   installers, then point update.json on the `update` branch at it.
-# - Run it by hand (Actions -> Release -> Run workflow) on any branch: the same builds, uploaded as workflow
-#   artifacts, and `release.mjs --dry-run`. Nothing is published.
+# Release pipeline: runs when a pull request is merged into main (any push to main). Other branches never release.
+# - If package.json's version already has a GitHub release, nothing happens (a PR that did not bump the version).
+# - Otherwise: build the Connecttech app for Windows, macOS (Apple silicon and Intel) and Linux, create the tag
+#   v<version> on that commit and the GitHub release with the CAP zip and the app installers (CHANGELOG section as
+#   notes), then point update.json on the `update` branch at it.
+# To release: in your PR, bump the version in package.json and launcher/src-tauri/Cargo.toml and add a CHANGELOG
+# section for it; merging the PR publishes it.
 # App installers carry fixed names, so https://github.com/<repo>/releases/latest/download/<name> always works:
 #   Connecttech-windows-x64-setup.exe, Connecttech-mac-arm64.dmg, Connecttech-mac-x64.dmg,
 #   Connecttech-linux-amd64.AppImage, Connecttech-linux-amd64.deb
-# The app is not code-signed yet: users allow it once (Windows SmartScreen, macOS Privacy & Security).
+# The app is not notarized yet: users allow it once (Windows SmartScreen, macOS Privacy & Security).
 name: Release
 
 on:
   push:
-    tags: ['v*.*.*']
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      new: ${{ steps.version.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released; nothing to do."
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing v$version."
+          fi
+
   launcher:
     name: app (${{ matrix.name }})
+    needs: check
+    if: needs.check.outputs.new == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -99,7 +122,8 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: launcher
+    needs: [check, launcher]
+    if: needs.check.outputs.new == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,10 +142,6 @@ jobs:
           path: .output/launcher
       - run: ls -la .output/launcher
       - name: Publish
-        if: github.event_name == 'push'
         run: node scripts/release.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Dry run (manual run, nothing published)
-        if: github.event_name == 'workflow_dispatch'
-        run: node scripts/release.mjs --dry-run

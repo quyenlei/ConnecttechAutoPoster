@@ -1,8 +1,8 @@
 // Publishes the current version for the in-extension update check (normally run by .github/workflows/release.yml
-// when a tag `v<version>` is pushed; it also works by hand with the GitHub CLI logged in):
+// when a merge into main carries a version that has no release yet; it also works by hand with the GitHub CLI):
 // 1. zips the build and creates the GitHub release `v<version>` in the public CAP repository (UPDATE_REPO in
 //    src/lib/update.ts) with it and the Connecttech app installers attached and the CHANGELOG section of that
-//    version as notes; the tag must already be pushed;
+//    version as notes; in CI it creates the tag on the merged commit, by hand the tag must already be pushed;
 // 2. only then points `update.json` on the `update` branch (UPDATE_BRANCH) at that release, so CAP never
 //    announces a version whose zip does not exist yet. update.json carries the zip's SHA-256 for the Connecttech app.
 // Connecttech launcher installers built by the workflow's `launcher` job are attached from .output/launcher/ when
@@ -47,7 +47,7 @@ const tag = `v${version}`;
 
 // In CI the pushed tag must match package.json, so a tag never publishes another version's build.
 // A manual dry run (workflow_dispatch) runs on a branch, so only a tag ref is checked.
-const ref = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined;
+const ref = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined; // legacy tag runs
 if (ref && ref !== tag) throw new Error(`Tag ${ref} does not match package.json version ${version}.`);
 
 const changelog = read('CHANGELOG.md');
@@ -83,7 +83,9 @@ if (dryRun) {
 const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
 writeFileSync(notesFile, notes);
 console.log(`Publishing ${tag} to ${repo}`);
-run('gh', ['release', 'create', tag, zip, ...launcher, '--repo', repo, '--verify-tag', '--title', tag, '--notes-file', notesFile]);
+// In CI (a merge into main) the tag is created on the merged commit; by hand, the tag must already be pushed.
+const target = process.env.GITHUB_SHA ? ['--target', process.env.GITHUB_SHA] : ['--verify-tag'];
+run('gh', ['release', 'create', tag, zip, ...launcher, '--repo', repo, ...target, '--title', tag, '--notes-file', notesFile]);
 
 // One commit per release on the `update` branch, holding update.json and nothing else.
 const parent = ghApi([`repos/${repo}/git/ref/heads/${branch}`], undefined, true)?.object?.sha ?? null;
