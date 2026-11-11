@@ -95,6 +95,9 @@ export function UpdateNotice({ withCheck = false, compact = false }: { withCheck
               Cách cập nhật: giải nén file zip đè lên thư mục extension đang dùng, mở <code>chrome://extensions</code>, bấm tải lại Connecttech Auto Poster, rồi tải lại các tab Facebook.
             </p>
           )}
+          {!helperReady && (
+            <p className="update__hint">Nếu bạn dùng app Connecttech, mở app để cập nhật. CAP tự tải lại khi không có lượt chạy nào.</p>
+          )}
           {!updater?.installed && os && (
             <p className="update__hint">
               Muốn lần sau chỉ cần bấm một nút? <a href={UPDATER_DOWNLOADS[os]} target="_blank" rel="noreferrer">Tải bộ cài trình cập nhật cho {OS_NAMES[os]}</a>, giải nén rồi {INSTALLER_STEPS[os]}. Cài một lần là đủ.

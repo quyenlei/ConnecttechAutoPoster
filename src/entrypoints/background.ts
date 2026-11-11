@@ -6,7 +6,7 @@ import { renderPost } from '@/lib/template';
 import { isRunCommand, type CommandReply, type GroupNameReply, type GroupNameRequest, type JoinedGroupsReply, type JoinedGroupsRequest, type PostReply, type PostRequest, type RunCommand, type FeedCommentRequest, type FeedPickRequest, type FeedPickReply } from '@/lib/messages';
 import { historyKeysForGroup } from '@/lib/comment-pick';
 import { fillDefaultComments, withDefaultCampaigns } from '@/lib/defaults';
-import { fetchLatestRelease, updateCheckDue } from '@/lib/update';
+import { fetchLatestRelease, shouldSelfReload, updateCheckDue } from '@/lib/update';
 import { isMissingHost, parsePingReply, parseUpdateReply, runsFromOtherFolder, updaterErrorMessage, UPDATER_HOST } from '@/lib/updater';
 import { describeRunEnd } from '@/lib/notify';
 import { applyOutcome, commentLockUntil, continueRun, createRun, IDLE_RUN, isActive, isCommentLocked, pause, pickVariation, resume, stop } from '@/lib/run-engine';
@@ -30,7 +30,10 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM) void runStep();
     if (alarm.name === SCHEDULE_ALARM) void processSchedule();
-    if (alarm.name === UPDATE_ALARM) void checkForUpdate(false);
+    if (alarm.name === UPDATE_ALARM) {
+      void checkForUpdate(false);
+      void reloadIfFolderIsNewer();
+    }
   });
 
   // Saving or deleting a campaign changes the schedule. Nothing before "now" counts as due then.
@@ -55,6 +58,11 @@ export default defineBackground(() => {
     })();
   });
 
+  // A run that ends lets a waiting self-reload happen (see reloadIfFolderIsNewer).
+  runItem.watch((run) => {
+    if (!isActive(run)) void reloadIfFolderIsNewer();
+  });
+
   // The service worker can be restarted at any time; rebuild the timers from stored state.
   void restoreSchedule();
   void processSchedule();
@@ -62,6 +70,23 @@ export default defineBackground(() => {
   void browser.alarms.create(UPDATE_ALARM, { periodInMinutes: 60 });
   void checkForUpdate(false);
 });
+
+/**
+ * The Connecttech launcher may replace CAP's folder while Chrome runs it. Chrome keeps the old code until the
+ * extension reloads, so reload when the folder's manifest is newer and no run is active. Reads a local file only.
+ */
+async function reloadIfFolderIsNewer(): Promise<void> {
+  let onDisk: string | null = null;
+  try {
+    const response = await fetch('/manifest.json', { cache: 'no-store' });
+    const manifest: unknown = await response.json();
+    if (typeof manifest === 'object' && manifest !== null && 'version' in manifest && typeof manifest.version === 'string') onDisk = manifest.version;
+  } catch {
+    return;
+  }
+  const running = browser.runtime.getManifest().version;
+  if (shouldSelfReload(onDisk, running, isActive(await runItem.getValue()))) browser.runtime.reload();
+}
 
 async function restoreSchedule(): Promise<void> {
   const run = await runItem.getValue();
