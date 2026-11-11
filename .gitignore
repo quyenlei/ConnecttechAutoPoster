@@ -9,3 +9,9 @@ stats.html
 docs/
 .claude/
 .keys/
+
+# Connecttech launcher
+launcher/node_modules/
+launcher/dist/
+launcher/src-tauri/target/
+launcher/src-tauri/gen/
