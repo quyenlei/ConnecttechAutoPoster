@@ -4,6 +4,10 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-11
+
+First stable version. Same features as 0.8.2; CAP and the Connecttech app (1.0.0) now both start from 1.0.0.
+
 ### Changed
 - **The Connecttech app now has its own version and releases on its own** (`app-v<version>`, starting at 1.0.0, changes in `launcher/CHANGELOG.md`). CAP releases (`v<version>`) carry only the extension zip, so fixing CAP no longer rebuilds the app, and the app is rebuilt only when it changes. `update.json` gains an `app` part (version, release page, download links) that the app reads for "Có bản app mới"; CAP ignores it. App releases are never marked Latest, so CAP's fallback check keeps reading CAP releases. App download links in README point to the app releases instead of `releases/latest/download/…`.
 
