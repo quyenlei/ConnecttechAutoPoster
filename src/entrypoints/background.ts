@@ -143,7 +143,7 @@ async function processSchedule(): Promise<void> {
 let checkingUpdate = false;
 
 /**
- * Reads the latest release of the public releases repository and stores it in `updateItem`. Automatic checks
+ * Reads the latest release of the public CAP repository and stores it in `updateItem`. Automatic checks
  * run at most once a day (the hourly alarm only asks whether one is due); `force` is the user's button.
  * Sends no cookies or user data; the request is a plain GET. Installing stays manual (see lib/update.ts).
  */

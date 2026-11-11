@@ -1,5 +1,5 @@
 // Publishes the current version for the in-extension update check:
-// zips the build and creates the GitHub release `v<version>` in the public releases repository
+// zips the build and creates the GitHub release `v<version>` in the public CAP repository
 // (UPDATE_REPO in src/lib/update.ts), with the CHANGELOG section of that version as notes.
 // Run after `pnpm build` and the checks; it does not bump the version. Needs the GitHub CLI (`gh`) logged in.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';

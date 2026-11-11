@@ -3,7 +3,7 @@ import { isNewer, parseLatestRelease, parseVersion, updateCheckDue, UPDATE_CHECK
 
 const release = (over: Record<string, unknown> = {}) => ({
   tag_name: 'v0.7.0',
-  html_url: 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/tag/v0.7.0',
+  html_url: 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v0.7.0',
   published_at: '2026-11-11T02:00:00Z',
   draft: false,
   prerelease: false,
@@ -33,7 +33,7 @@ describe('update check', () => {
   it('reads the version, the release page and the zip download', () => {
     expect(parseLatestRelease(release())).toEqual({
       version: '0.7.0',
-      pageUrl: 'https://github.com/quyenlei/ConnecttechAutoPoster-releases/releases/tag/v0.7.0',
+      pageUrl: 'https://github.com/quyenlei/ConnecttechAutoPoster/releases/tag/v0.7.0',
       zipUrl: 'https://github.com/x/y/releases/download/v0.7.0/cap.zip',
       publishedAt: '2026-11-11T02:00:00Z',
     });
