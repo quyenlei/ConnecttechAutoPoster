@@ -6,6 +6,7 @@
   --cap-border: #d6e2f3;
   --cap-primary: #0046b5;
   --cap-primary-contrast: #fff;
+  --cap-logo-surface: #fff; // the logo is blue, so it sits on white in both themes
   --cap-focus: #0148b9;
 
   all: initial;
@@ -44,7 +45,7 @@
     height: 3.25rem;
     border: 0;
     border-radius: 50%;
-    background: var(--cap-primary);
+    background: var(--cap-logo-surface);
     box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
     color: var(--cap-primary-contrast);
     cursor: pointer;
@@ -57,6 +58,13 @@
       outline: 3px solid var(--cap-focus);
       outline-offset: 3px;
     }
+  }
+
+  &__launcher-logo {
+    display: block;
+    width: 2.25rem;
+    height: 2.25rem;
+    object-fit: contain;
   }
 
   &__window {
@@ -137,7 +145,14 @@
     width: 2rem;
     height: 2rem;
     border-radius: 50%;
-    background: rgb(255 255 255 / 20%);
+    background: var(--cap-logo-surface);
+  }
+
+  &__avatar-logo {
+    display: block;
+    width: 1.5rem;
+    height: 1.5rem;
+    object-fit: contain;
   }
 
   &__header-button {

@@ -49,10 +49,7 @@ export function App() {
         <div className="container shell__header-inner">
           <div className="shell__brand">
             <span className="shell__logo" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 2 11 13" />
-                <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
-              </svg>
+              <img className="shell__logo-image" src="/icon/128.png" alt="" width="32" height="32" />
             </span>
             <div className="shell__brand-text">
               <h1 translate="no">Connecttech Auto Poster</h1>
