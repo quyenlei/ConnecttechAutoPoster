@@ -85,10 +85,13 @@ def native(message):
     """Starts the host the way Chrome does and exchanges one framed message."""
     host = host_manifest()['path']
     origin = f'chrome-extension://{ID}/'
-    cmd = ['cmd.exe', '/d', '/s', '/c', f'"{host}" {origin} --parent-window=0'] if WINDOWS else [host, origin]
+    # On Windows Chrome runs: cmd.exe /d /s /c ""<host path>" <origin> --parent-window=0" (one string, not a list,
+    # so Python does not re-quote it).
+    cmd = f'cmd.exe /d /s /c ""{host}" {origin} --parent-window=0"' if WINDOWS else [host, origin]
     data = json.dumps(message, separators=(',', ':')).encode()
-    out = subprocess.run(cmd, input=struct.pack('<I', len(data)) + data, capture_output=True, env=env, timeout=600).stdout
-    assert len(out) >= 4, f'no reply: {out!r}'
+    proc = subprocess.run(cmd, input=struct.pack('<I', len(data)) + data, capture_output=True, env=env, timeout=600)
+    out = proc.stdout
+    assert len(out) >= 4, f'no reply: {out!r} stderr: {proc.stderr.decode(errors="replace")}'
     (n,) = struct.unpack('<I', out[:4])
     assert len(out) == 4 + n, f'reply framing: {out!r}'
     return json.loads(out[4:].decode('utf-8'))
