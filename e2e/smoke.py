@@ -2,7 +2,7 @@
 against a LOCAL MOCK of a Facebook group page. DNS is remapped so *.facebook.com
 resolves to 127.0.0.1 and every other host fails: no real network traffic.
 Usage: python3 e2e/smoke.py <ext_dir> <chromium_exe> <profile_dir>"""
-import hashlib, http.server, json, os, ssl, subprocess, sys, tempfile, threading, time, urllib.parse
+import base64, hashlib, http.server, json, os, ssl, subprocess, sys, tempfile, threading, time, urllib.parse
 from playwright.sync_api import sync_playwright
 
 MOCK = """<!doctype html><html><head><title>(2) Mock Group Name | Facebook</title></head><body><h1>Mock group</h1>
@@ -105,7 +105,9 @@ document.getElementById('open').onclick=()=>{
 </script></body></html>"""
 
 ext, exe, prof = [os.path.realpath(a) for a in sys.argv[1:4]]
-eid = ''.join(chr(97 + int(c, 16)) for c in hashlib.sha256(ext.encode()).hexdigest()[:32])
+# The manifest `key` fixes the extension ID (sha256 of the public key); without one Chrome hashes the folder path.
+_key = json.load(open(os.path.join(ext, 'manifest.json'))).get('key')
+eid = ''.join(chr(97 + int(c, 16)) for c in hashlib.sha256(base64.b64decode(_key) if _key else ext.encode()).hexdigest()[:32])
 posted = []
 posted_meta = []  # per post: number of images, whether the preview card was still open, image names
 comments = []
