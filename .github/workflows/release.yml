@@ -73,6 +73,15 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
         if: matrix.target != 'x86_64-apple-darwin'
       - run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Check the mac app signature
+        if: runner.os == 'macOS'
+        # Ad-hoc signing of the whole bundle (tauri.conf signingIdentity "-"). Without it macOS calls a downloaded
+        # app "damaged" instead of offering Open Anyway.
+        run: |
+          dmg=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg | head -1)
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | awk -F'\t' '{print $NF}')
+          codesign --verify --deep --strict --verbose=2 "$mount/Connecttech.app"
+          hdiutil detach -quiet "$mount"
       - name: Collect installers under fixed names
         run: |
           bundle=src-tauri/target/${{ matrix.target }}/release/bundle

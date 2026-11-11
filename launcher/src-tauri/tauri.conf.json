@@ -39,7 +39,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "shortDescription": "C\u00e0i v\u00e0 c\u1eadp nh\u1eadt Connecttech Auto Poster"
+    "shortDescription": "C\u00e0i v\u00e0 c\u1eadp nh\u1eadt Connecttech Auto Poster",
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    }
   },
   "mainBinaryName": "connecttech"
 }
