@@ -63,7 +63,9 @@ describe('updater helper', () => {
   it('offers the installer for Windows and macOS only, from github.com', () => {
     expect(updaterOs('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130')).toBe('win');
     expect(updaterOs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/130')).toBe('mac');
-    expect(updaterOs('Mozilla/5.0 (X11; Linux x86_64) Chrome/130')).toBeNull();
-    for (const url of Object.values(UPDATER_DOWNLOADS)) expect(url).toMatch(/^https:\/\/github\.com\/.+\/releases\/latest\/download\/cap-updater-(windows|mac)\.zip$/);
+    expect(updaterOs('Mozilla/5.0 (X11; Linux x86_64) Chrome/130')).toBe('linux');
+    expect(updaterOs('Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) Chrome/130')).toBeNull();
+    expect(updaterOs('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/130 Mobile')).toBeNull();
+    for (const url of Object.values(UPDATER_DOWNLOADS)) expect(url).toMatch(/^https:\/\/github\.com\/.+\/releases\/latest\/download\/cap-updater-(windows|mac|linux)\.zip$/);
   });
 });

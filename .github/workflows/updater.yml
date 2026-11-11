@@ -1,5 +1,5 @@
 # Tests the updater helper on the systems users run: Windows (PowerShell 5.1 through cmd.exe, as Chrome starts it)
-# and macOS (bash, plus the one-click update end to end in Chrome). Uses local mocks only, never GitHub releases.
+# macOS (bash, plus the one-click update end to end in Chrome) and Linux (bash). Uses local mocks only, never GitHub releases.
 name: Updater
 
 on:
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

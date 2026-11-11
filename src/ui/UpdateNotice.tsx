@@ -7,8 +7,13 @@ import { runsFromOtherFolder, UPDATER_DOWNLOADS, updaterOs } from '@/lib/updater
 import { useConfirm } from './confirm';
 import { sendCommand, useItem } from './hooks';
 
-const OS_NAMES = { win: 'Windows', mac: 'macOS' } as const;
-const INSTALLER_FILES = { win: 'install.bat', mac: 'install.command' } as const;
+const OS_NAMES = { win: 'Windows', mac: 'macOS', linux: 'Linux' } as const;
+/** How to start the installer once it is unzipped. */
+const INSTALLER_STEPS = {
+  win: <>bấm đúp <code>install.bat</code></>,
+  mac: <>bấm đúp <code>install.command</code></>,
+  linux: <>mở Terminal trong thư mục đó và chạy <code>bash install.sh</code></>,
+} as const;
 
 /**
  * Shows when a newer version is on GitHub. With the updater helper installed (lib/updater.ts) it offers
@@ -92,7 +97,7 @@ export function UpdateNotice({ withCheck = false, compact = false }: { withCheck
           )}
           {!updater?.installed && os && (
             <p className="update__hint">
-              Muốn lần sau chỉ cần bấm một nút? <a href={UPDATER_DOWNLOADS[os]} target="_blank" rel="noreferrer">Tải bộ cài trình cập nhật cho {OS_NAMES[os]}</a>, giải nén rồi bấm đúp <code>{INSTALLER_FILES[os]}</code>. Cài một lần là đủ.
+              Muốn lần sau chỉ cần bấm một nút? <a href={UPDATER_DOWNLOADS[os]} target="_blank" rel="noreferrer">Tải bộ cài trình cập nhật cho {OS_NAMES[os]}</a>, giải nén rồi {INSTALLER_STEPS[os]}. Cài một lần là đủ.
             </p>
           )}
         </>

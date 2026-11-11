@@ -14,6 +14,7 @@ export const EXTENSION_ID = 'ebembjpemaickbaogincmeajpgeabcbh';
 export const UPDATER_DOWNLOADS = {
   win: `https://github.com/${UPDATE_REPO}/releases/latest/download/cap-updater-windows.zip`,
   mac: `https://github.com/${UPDATE_REPO}/releases/latest/download/cap-updater-mac.zip`,
+  linux: `https://github.com/${UPDATE_REPO}/releases/latest/download/cap-updater-linux.zip`,
 } as const;
 
 export type UpdaterOs = keyof typeof UPDATER_DOWNLOADS;
@@ -80,5 +81,7 @@ export function runsFromOtherFolder(state: UpdaterState | null, running: string)
 export function updaterOs(userAgent: string): UpdaterOs | null {
   if (/Windows/i.test(userAgent)) return 'win';
   if (/Macintosh|Mac OS X/i.test(userAgent)) return 'mac';
+  // ChromeOS and Android also say Linux but cannot run the helper.
+  if (/Linux/i.test(userAgent) && !/Android|CrOS/i.test(userAgent)) return 'linux';
   return null;
 }
