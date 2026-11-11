@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { clampDelay, clampGroupBreak, delayWarning, formatDuration, minDelayFor, recommendDelay } from '@/lib/delay';
-import { withDefaultCampaigns } from '@/lib/defaults';
+import { DEFAULT_CAMPAIGN_IDS, withDefaultCampaigns } from '@/lib/defaults';
 import { addToSelection, filterGroups, removeFromSelection } from '@/lib/groups';
 import { ALLOWED_IMAGE_TYPES, totalImageBytes, validateImages } from '@/lib/images';
 import { newId } from '@/lib/id';
@@ -151,14 +151,21 @@ export function CampaignsView() {
   /** Adds the two ready-made campaigns (fast comments, posting) on every saved group, unless they exist already. */
   async function addDefaults() {
     const result = withDefaultCampaigns(await campaignsItem.getValue(), await groupsItem.getValue(), Date.now());
-    if (result.added === 0) {
+    if (result.added === 0 && !result.filled) {
       setMessage({ text: 'Hai chiến dịch mặc định đã có sẵn trong danh sách.', danger: false });
       return;
     }
     await campaignsItem.setValue(result.campaigns);
-    const first = result.campaigns[result.campaigns.length - result.added];
+    const first = result.added > 0
+      ? result.campaigns[result.campaigns.length - result.added]
+      : result.campaigns.find((c) => c.id === DEFAULT_CAMPAIGN_IDS.comment);
     if (first) await select(first); // asks first when the open campaign has unsaved changes
-    setMessage({ text: `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm. Hãy viết nội dung rồi lưu trước khi chạy.`, danger: false });
+    const parts = [
+      result.added > 0 ? `Đã tạo ${result.added} chiến dịch mặc định trên ${groups.length} nhóm.` : '',
+      result.filled || result.added > 0 ? '"Bình luận nhanh" có sẵn bình luận mẫu về Connecttech.' : '',
+      'Hãy xem lại nội dung và nhóm rồi lưu trước khi chạy.',
+    ];
+    setMessage({ text: parts.filter(Boolean).join(' '), danger: false });
   }
 
   async function save(): Promise<Campaign | null> {
