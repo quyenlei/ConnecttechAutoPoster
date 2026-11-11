@@ -203,11 +203,11 @@ with sync_playwright() as p:
     # The two ready-made campaigns: created on first install (no groups yet then), with empty text, so they
     # cannot run yet. The button adds only missing ones: none now; after deleting one, that one again, on the 3 groups.
     pg.click("button:has-text('Chiến dịch')")
-    pg.wait_for_selector("button:text-is('Bình luận nhanh')"); pg.wait_for_selector("button:text-is('Đăng bài vào nhóm')")
+    pg.wait_for_selector(".campaigns__list-title:text-is('Bình luận nhanh')"); pg.wait_for_selector(".campaigns__list-title:text-is('Đăng bài vào nhóm')")
     pg.click("button:has-text('Tạo chiến dịch mặc định')")
     pg.wait_for_selector("text=Hai chiến dịch mặc định đã có sẵn")
     pg.evaluate("chrome.storage.local.get('campaigns').then(d => chrome.storage.local.set({ campaigns: d.campaigns.filter(c => c.id !== 'default-comment') }))")
-    pg.wait_for_selector("button:text-is('Bình luận nhanh')", state='detached')
+    pg.wait_for_selector(".campaigns__list-title:text-is('Bình luận nhanh')", state='detached')
     pg.click("button:has-text('Tạo chiến dịch mặc định')")
     pg.wait_for_selector("text=Đã tạo 1 chiến dịch mặc định trên 3 nhóm")
     assert pg.locator("#c-name").input_value() == 'Bình luận nhanh'
@@ -292,7 +292,7 @@ with sync_playwright() as p:
     assert comments == ['Bình luận thử'], f"post was commented twice: {comments}"
 
     # A group with no recent post is skipped with a reason, and nothing is sent.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockempty | Mock Empty')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Empty')")
     run_comment_campaign('Smoke bình luận trống', 'Mock Empty')
@@ -301,7 +301,7 @@ with sync_playwright() as p:
     assert not errors
 
     # Newest-posts mode: a feed post with no link, time or ID is commented once; a second run finds it already tried.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockfeed | Mock Feed')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Feed')")
     run_comment_campaign('Smoke bình luận feed', 'Mock Feed', newest=True)
@@ -316,7 +316,7 @@ with sync_playwright() as p:
     # Infinite feed: the first post already has the user's comment, the second renders only near the viewport,
     # the third loads after scrolling to the end and shows its time only under the pointer, then old posts follow.
     # Two comments go to the second and third post, in one window that loads the group once.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockscroll | Mock Scroll')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Scroll')")
     loads_before = page_loads.count('/groups/mockscroll/')
@@ -325,14 +325,14 @@ with sync_playwright() as p:
     while comments.count('Bình luận cuộn') < 2 and time.time() < deadline: time.sleep(1)
     print('scroll comments:', comment_authors[-2:], '| loads:', page_loads.count('/groups/mockscroll/') - loads_before)
     if comment_authors[-2:] != ['Bình', 'Chi']:
-        pg.click("button:text-is('Nhật ký')"); print('\n'.join(pg.locator('tbody tr').all_inner_texts()[:8]))
+        pg.click("button.shell__tab:has(span:text-is('Nhật ký'))"); print('\n'.join(pg.locator('tbody tr').all_inner_texts()[:8]))
     assert comment_authors[-2:] == ['Bình', 'Chi'], f"wrong posts commented: {comment_authors}"
     pg.wait_for_selector('.badge--done', timeout=60000)
     assert page_loads.count('/groups/mockscroll/') - loads_before == 1, f"group feed was loaded {page_loads.count('/groups/mockscroll/') - loads_before} times"
     assert not errors
 
     # A group where admins approve posts: the post is logged as pending, not as posted.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockpending | Mock Pending')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock Pending')")
     pg.click("button:has-text('Chiến dịch')")
@@ -372,7 +372,7 @@ with sync_playwright() as p:
     img_a, img_b = f"{tmp}/anh-a.png", f"{tmp}/anh-b.png"
     tiny_png(img_a, 40); tiny_png(img_b, 60)
 
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mocknoimg | Mock NoImg')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock NoImg')")
 
@@ -444,7 +444,7 @@ with sync_playwright() as p:
     assert not errors
 
     # An editor that loses line breaks: the post fails and nothing is sent as one block.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mocklostbreaks | Mock LostBreaks')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock LostBreaks')")
     count = len(posted)
@@ -456,7 +456,7 @@ with sync_playwright() as p:
     assert not errors
 
     # An editor that keeps lines only for a paste: the post goes out once, with its lines, and is not entered twice.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.fill('#group-list', 'https://www.facebook.com/groups/mockpasteonly | Mock PasteOnly')
     pg.click("button:has-text('Thêm nhóm')"); pg.wait_for_selector("td:text-is('Mock PasteOnly')")
     count = len(posted)
@@ -470,7 +470,7 @@ with sync_playwright() as p:
 
     # Joined groups: the list is read from the mock "groups you joined" page (scrolled to load all), pending
     # requests are left out, the group already listed is marked, and only the ticked group is added.
-    pg.click("button:text-is('Nhóm')")
+    pg.click("button.shell__tab:has(span:text-is('Nhóm'))")
     pg.click("button:has-text('Lấy danh sách nhóm đã tham gia')")
     pg.wait_for_selector('text=Tìm thấy 3 nhóm', timeout=90000)
     assert pg.locator('text=2 nhóm chưa có trong danh sách').count() == 1, 'joined preview count'
@@ -483,7 +483,7 @@ with sync_playwright() as p:
     assert not errors
 
     # Overview: today's numbers are filled in and the notification option can be switched on.
-    pg.click("button:text-is('Tổng quan')")
+    pg.click("button.shell__tab:has(span:text-is('Tổng quan'))")
     pg.wait_for_selector('text=Tỉ lệ thành công')
     assert pg.locator('.overview__stat-value').first.inner_text() != '0', "today's sent count should not be 0"
     # The checkbox is controlled by stored settings: it re-renders shortly after the storage write, so wait for that.
@@ -496,14 +496,14 @@ with sync_playwright() as p:
     keys = "['groups','campaigns','logs']"
     before = pg.evaluate(f"chrome.storage.local.get({keys}).then(d => ({{groups: d.groups.length, campaigns: d.campaigns.length, logs: d.logs.length, images: d.campaigns.reduce((n, c) => n + (c.images ? c.images.length : 0), 0), preview: d.campaigns.filter(c => c.removeLinkPreview).length, scheduled: d.campaigns.filter(c => c.schedule && c.schedule.enabled).length}}))")
     assert before['scheduled'] >= 1 and before['images'] == 3 and before['preview'] == 1, before
-    pg.click("button:text-is('Sao lưu')")
+    pg.click("button.shell__tab:has(span:text-is('Sao lưu'))")
     with pg.expect_download() as download:
         pg.click("button:text-is('Xuất bản sao lưu')")
     backup_path = f"{tmp}/backup.json"
     download.value.save_as(backup_path)
     assert download.value.suggested_filename.startswith('cap-backup-'), download.value.suggested_filename
     pg.evaluate("chrome.storage.local.clear()")
-    pg.reload(); pg.click("button:text-is('Sao lưu')")
+    pg.reload(); pg.click("button.shell__tab:has(span:text-is('Sao lưu'))")
     pg.set_input_files('#backup-file', backup_path)
     pg.wait_for_selector("text=Xem trước:")
     assert "Lịch sẽ được tắt khi nhập" in pg.locator('.backup__preview').inner_text()
@@ -514,7 +514,7 @@ with sync_playwright() as p:
     assert after['groups'] == before['groups'] and after['campaigns'] == before['campaigns'], (before, after)
     assert after['logs'] >= before['logs'] and after['scheduled'] == 0, (before, after)
     # Importing the same file again adds nothing.
-    pg.reload(); pg.click("button:text-is('Sao lưu')")
+    pg.reload(); pg.click("button.shell__tab:has(span:text-is('Sao lưu'))")
     pg.set_input_files('#backup-file', backup_path)
     pg.wait_for_selector("text=Xem trước:")
     pg.click("button:text-is('Nhập dữ liệu')")
@@ -523,7 +523,7 @@ with sync_playwright() as p:
     # status, recent activity and a start button; it expands to the full dashboard in place, minimises and closes.
     # The mock sends a frame-src CSP like Facebook does; the extension pages must still load in the window.
     # The backup test above cleared storage; "Kiểm tra cập nhật" (tab Sao lưu) checks again at once.
-    pg.click("button:text-is('Sao lưu')"); pg.click("button:has-text('Kiểm tra cập nhật')")
+    pg.click("button.shell__tab:has(span:text-is('Sao lưu'))"); pg.click("button:has-text('Kiểm tra cập nhật')")
     pg.wait_for_selector("text=Có bản mới", timeout=15000)
     fb = ctx.new_page(); fb.set_viewport_size({'width': 1440, 'height': 900}); fb.on('dialog', lambda d: (native_dialogs.append(d.message), d.accept())); fb.goto('https://www.facebook.com/')
     fb.click('cap-chat-host .cap-chat__launcher')
@@ -536,7 +536,7 @@ with sync_playwright() as p:
     assert len(github_requests) >= 2 and set(github_requests) == {'/repos/quyenlei/ConnecttechAutoPoster-releases/releases/latest'}, github_requests
     fb.screenshot(path=os.path.join(prof, 'e2e-chatbox.png'))  # inside the throwaway profile, for a manual look
     fb.click("cap-chat-host button[aria-label='Mở rộng']")
-    chat.locator("button:text-is('Chiến dịch')").wait_for(timeout=15000)
+    chat.locator("button.shell__tab:has(span:text-is('Chiến dịch'))").wait_for(timeout=15000)
     fb.click("cap-chat-host button[aria-label='Thu gọn']")
     chat.locator("button:text-is('Chạy')").wait_for(timeout=15000)
     fb.click("cap-chat-host button[aria-label='Thu nhỏ']")
