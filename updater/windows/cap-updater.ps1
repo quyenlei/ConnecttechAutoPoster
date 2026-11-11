@@ -76,7 +76,8 @@ function Invoke-Update {
     if ($LASTEXITCODE -ge 8) { return @{ ok = $false; code = 'folder' } }
     return @{ ok = $true; version = $version; changed = $true }
   } catch {
-    return @{ ok = $false; code = 'folder' }
+    # Unexpected failure: keep the reason for the log; CAP shows its own message for the code.
+    return @{ ok = $false; code = 'folder'; detail = [string]$_.Exception.Message }
   } finally {
     Remove-Item -Recurse -Force -Path $tmp -ErrorAction SilentlyContinue
   }
