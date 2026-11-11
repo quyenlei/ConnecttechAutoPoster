@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-11
+
+### Changed
+- Test release for the update check: same code as 0.7.1, only the version number changes. Installing 0.7.1 and pressing **Kiểm tra cập nhật** should show **Có bản mới** for 0.7.2.
+
 ## [0.7.1] - 2026-11-11
 
 ### Changed
