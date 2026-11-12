@@ -1,14 +1,7 @@
 # Release pipeline: runs when a pull request is merged into main (any push to main). Other branches never release.
-# CAP (the extension) and the Connecttech app (launcher/) have their own versions and release on their own:
-# - CAP: when package.json's version has no release `v<version>` yet -> typecheck, tests, scripts/release.mjs
-#   (zip + release `v<version>` + update.json). No app build.
-# - App: when launcher/package.json's version has no release `app-v<version>` yet -> build the installers for
-#   Windows, macOS (Apple silicon, Intel) and Linux, then scripts/release-app.mjs (release `app-v<version>`, never
-#   marked Latest, + `app` in update.json).
-# - A merge that bumps neither version publishes nothing.
-# To release: bump the version you changed (CAP: package.json + CHANGELOG.md; app: launcher/package.json +
-# launcher/src-tauri/Cargo.toml + launcher/CHANGELOG.md) in the PR; merging the PR publishes it.
-# The app is not notarized yet: users allow it once (Windows SmartScreen, macOS Privacy & Security).
+# When package.json's version has no release `v<version>` yet: typecheck, tests, then scripts/release.mjs (zip +
+# release `v<version>` with the CHANGELOG.md section + update.json on the `update` branch). A merge that keeps an
+# already released version publishes nothing. To release: bump package.json and add a CHANGELOG section in the PR.
 name: Release
 
 on:
@@ -27,27 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cap_new: ${{ steps.cap.outputs.new }}
-      app_new: ${{ steps.app.outputs.new }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Write the release check
-        run: |
-          cat > "$RUNNER_TEMP/released.sh" <<'SH'
-          # $1 tag -> prints new=true (404) or new=false (200); stops on any other answer.
-          status=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" --silent -i 2>/dev/null | head -1 | awk '{print $2}')
-          echo "GitHub answered $status for $1"
-          case "$status" in
-            200) echo "new=false" >> "$GITHUB_OUTPUT"; echo "$1 is already released." ;;
-            404) echo "new=true" >> "$GITHUB_OUTPUT"; echo "$1 will be released." ;;
-            *) gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" --silent; echo "Could not tell whether $1 exists."; exit 1 ;;
-          esac
-          SH
       - id: cap
-        run: bash "$RUNNER_TEMP/released.sh" "v$(node -p "require('./package.json').version")"
-      - id: app
-        run: bash "$RUNNER_TEMP/released.sh" "app-v$(node -p "require('./launcher/package.json').version")"
+        run: |
+          # 200: released already, skip. 404: new version, release. Anything else: stop and show why.
+          tag="v$(node -p "require('./package.json').version")"
+          status=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --silent -i 2>/dev/null | head -1 | awk '{print $2}')
+          echo "GitHub answered $status for $tag"
+          case "$status" in
+            200) echo "new=false" >> "$GITHUB_OUTPUT"; echo "$tag is already released." ;;
+            404) echo "new=true" >> "$GITHUB_OUTPUT"; echo "$tag will be released." ;;
+            *) gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --silent; echo "Could not tell whether $tag exists."; exit 1 ;;
+          esac
 
   cap-release:
     name: CAP release
@@ -65,103 +52,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: node scripts/release.mjs
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  app-build:
-    name: app (${{ matrix.name }})
-    needs: check
-    if: needs.check.outputs.app_new == 'true'
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - name: windows-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-          - name: mac-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-            bundles: dmg
-          - name: mac-x64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            bundles: dmg
-          - name: linux-amd64
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: launcher
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - name: Linux packages
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: launcher/package.json
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: launcher/src-tauri
-          key: ${{ matrix.target }}
-      - run: pnpm install
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-        if: matrix.target != 'x86_64-apple-darwin'
-      - run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Check the mac app signature
-        if: runner.os == 'macOS'
-        # Ad-hoc signing of the whole bundle (tauri.conf signingIdentity "-"). Without it macOS calls a downloaded
-        # app "damaged" instead of offering Open Anyway.
-        run: |
-          dmg=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg | head -1)
-          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | awk -F'\t' '{print $NF}')
-          codesign --verify --deep --strict --verbose=2 "$mount/Connecttech.app"
-          hdiutil detach -quiet "$mount"
-      - name: Collect installers under fixed names
-        run: |
-          bundle=src-tauri/target/${{ matrix.target }}/release/bundle
-          mkdir -p ../dist-app
-          for f in "$bundle"/nsis/*.exe;           do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}-setup.exe"; done
-          for f in "$bundle"/dmg/*.dmg;            do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.dmg"; done
-          for f in "$bundle"/appimage/*.AppImage;  do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.AppImage"; done
-          for f in "$bundle"/deb/*.deb;            do [ -f "$f" ] && cp "$f" "../dist-app/Connecttech-${{ matrix.name }}.deb"; done
-          ls -la ../dist-app
-          [ -n "$(ls ../dist-app)" ] || { echo "no installer built"; exit 1; }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-${{ matrix.name }}
-          path: dist-app/*
-          if-no-files-found: error
-
-  app-release:
-    name: app release
-    needs: [check, app-build, cap-release]
-    # After CAP's release when both are new (both write update.json); still runs when CAP had nothing to release.
-    if: always() && needs.check.outputs.app_new == 'true' && needs.app-build.result == 'success' && needs.cap-release.result != 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: app-*
-          merge-multiple: true
-          path: .output/launcher
-      - run: ls -la .output/launcher
-      - run: node scripts/release-app.mjs
         env:
           GH_TOKEN: ${{ github.token }}

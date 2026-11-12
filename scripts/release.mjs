@@ -1,14 +1,13 @@
 // Publishes a CAP (extension) version: normally run by .github/workflows/release.yml when a merge into main carries
 // a package.json version that has no release yet; it also works by hand with the GitHub CLI logged in.
 // 1. zips the build and creates the GitHub release `v<version>` with the zip and the CHANGELOG.md section as notes;
-// 2. only then points update.json on the `update` branch at it (version, pages, zip and its SHA-256), keeping the
-//    app's fields (`app`), so CAP and the Connecttech app never announce a version whose zip does not exist yet.
-// The Connecttech app is released separately (scripts/release-app.mjs, tag `app-v<version>`).
+// 2. only then points update.json on the `update` branch at it (version, pages, zip and its SHA-256), so CAP never
+//    announces a version whose zip does not exist yet.
 // It does not bump the version. `--dry-run` builds the zip and prints the notes and update.json without publishing.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { alreadyReleased, changelogNotes, createRelease, dryRun, read, readUpdateJson, root, run, target, writeUpdateJson } from './release-common.mjs';
+import { alreadyReleased, changelogNotes, createRelease, dryRun, read, root, run, target, writeUpdateJson } from './release-common.mjs';
 
 const { name, version } = JSON.parse(read('package.json'));
 const { repo, branch } = target();
@@ -20,9 +19,7 @@ run('pnpm', ['exec', 'wxt', 'zip']);
 const zip = join(root, '.output', zipName);
 if (!existsSync(zip)) throw new Error(`Zip not found: ${zip}`);
 
-const current = readUpdateJson(repo, branch);
 const manifest = {
-  ...current,
   version,
   pageUrl: `https://github.com/${repo}/releases/tag/${tag}`,
   zipUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,

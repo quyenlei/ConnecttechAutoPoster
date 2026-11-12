@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-12
+
+### Removed
+- **Auto-update** (owner decision). The Connecttech desktop app (`launcher/`, releases `app-v…`), its CI and release jobs, and CAP's self-reload when its folder held a newer version are gone. CAP still checks GitHub once a day (and with **Kiểm tra cập nhật**) and shows **Có bản mới** with the zip link; updating is manual: unzip over the CAP folder, press ⟳ on CAP in `chrome://extensions`, reload the Facebook tabs. Data stays. `update.json` carries CAP's fields only.
+- If you installed the Connecttech app: you can delete it. If Chrome loads CAP from the app's folder (`~/Library/Application Support/com.connecttech.launcher/chrome-extension` on macOS, `%APPDATA%\com.connecttech.launcher\chrome-extension` on Windows), CAP keeps working from there; for later updates unzip new versions over that folder, or move CAP to a folder of your own (export a backup first).
+
 ## [1.0.0] - 2026-11-11
 
 First stable version. Same features as 0.8.2; CAP and the Connecttech app (1.0.0) now both start from 1.0.0.
