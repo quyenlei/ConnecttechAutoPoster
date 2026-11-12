@@ -41,14 +41,6 @@ export function parseVersion(text: string): [number, number, number] | null {
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
-/**
- * CAP's folder can be replaced while it runs (the Connecttech launcher, mode "Chrome có sẵn"): reload into the
- * newer files, but never in the middle of a run. `onDisk` is the version in the folder's manifest.json.
- */
-export function shouldSelfReload(onDisk: string | null, running: string, runActive: boolean): boolean {
-  return !runActive && onDisk !== null && isNewer(onDisk, running);
-}
-
 /** True only when both versions parse and `latest` is strictly newer. */
 export function isNewer(latest: string, current: string): boolean {
   const a = parseVersion(latest);

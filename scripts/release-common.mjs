@@ -1,5 +1,4 @@
-// Shared by scripts/release.mjs (CAP) and scripts/release-app.mjs (Connecttech app): GitHub CLI calls, CHANGELOG
-// notes, and update.json on the `update` branch. Both releases write update.json; each keeps the other's fields.
+// Helpers for scripts/release.mjs: GitHub CLI calls, CHANGELOG notes, and update.json on the `update` branch.
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -53,24 +52,13 @@ export function alreadyReleased(repo, tag) {
 
 /**
  * Creates the release. In CI (a merge into main) the tag is created on the merged commit; by hand, the tag must
- * already be pushed. `latest: false` keeps it from becoming the repository's "Latest" release.
+ * already be pushed.
  */
-export function createRelease({ repo, tag, files, notes, latest = true }) {
+export function createRelease({ repo, tag, files, notes }) {
   const notesFile = join(mkdtempSync(join(tmpdir(), 'cap-release-')), 'notes.md');
   writeFileSync(notesFile, notes);
   const where = process.env.GITHUB_SHA ? ['--target', process.env.GITHUB_SHA] : ['--verify-tag'];
-  run('gh', ['release', 'create', tag, ...files, '--repo', repo, ...where, '--title', tag, '--notes-file', notesFile, `--latest=${latest}`]);
-}
-
-/** The current update.json on the update branch ({} when there is none). */
-export function readUpdateJson(repo, branch) {
-  const file = ghApi([`repos/${repo}/contents/update.json?ref=${branch}`], undefined, true);
-  if (!file?.content) return {};
-  try {
-    return JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
-  } catch {
-    return {};
-  }
+  run('gh', ['release', 'create', tag, ...files, '--repo', repo, ...where, '--title', tag, '--notes-file', notesFile]);
 }
 
 /** One commit on the update branch holding update.json and nothing else. */

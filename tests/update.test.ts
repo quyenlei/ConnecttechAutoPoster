@@ -6,7 +6,6 @@ import {
   parseLatestRelease,
   parseUpdateManifest,
   parseVersion,
-  shouldSelfReload,
   updateCheckDue,
   UPDATE_API_URL,
   UPDATE_CHECK_EVERY_MS,
@@ -139,17 +138,3 @@ describe('fetchLatestRelease', () => {
   });
 });
 
-describe('shouldSelfReload', () => {
-  it('reloads when the folder holds a newer version and nothing runs', () => {
-    expect(shouldSelfReload('0.7.6', '0.7.5', false)).toBe(true);
-  });
-  it('does not reload for the same, an older or an unreadable version', () => {
-    expect(shouldSelfReload('0.7.5', '0.7.5', false)).toBe(false);
-    expect(shouldSelfReload('0.7.4', '0.7.5', false)).toBe(false);
-    expect(shouldSelfReload(null, '0.7.5', false)).toBe(false);
-    expect(shouldSelfReload('junk', '0.7.5', false)).toBe(false);
-  });
-  it('waits while a run is active', () => {
-    expect(shouldSelfReload('0.7.6', '0.7.5', true)).toBe(false);
-  });
-});

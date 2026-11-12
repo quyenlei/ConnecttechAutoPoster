@@ -5,8 +5,7 @@ import { isNewer, UPDATE_PAGE_URL } from '@/lib/update';
 import { sendCommand, useItem } from './hooks';
 
 /**
- * Shows when a newer version is on GitHub: the zip download, the change log, and how to update (the Connecttech
- * app, or the manual steps). `withCheck` adds a "check now" button and the last check result (dashboard only).
+ * Shows when a newer version is on GitHub: the zip download, the change log, and the manual update steps. `withCheck` adds a "check now" button and the last check result (dashboard only).
  */
 export function UpdateNotice({ withCheck = false, compact = false }: { withCheck?: boolean; compact?: boolean }) {
   const update = useItem(updateItem);
@@ -38,10 +37,7 @@ export function UpdateNotice({ withCheck = false, compact = false }: { withCheck
             <a className="button button--small" href={latest.pageUrl} target="_blank" rel="noreferrer">Xem thay đổi</a>
           </div>
           <p className="update__hint">
-            Dùng app Connecttech: mở app rồi bấm <strong>Kiểm tra cập nhật</strong>. CAP tự tải lại khi không có lượt chạy nào.
-          </p>
-          <p className="update__hint">
-            Cài thủ công: giải nén file zip đè lên thư mục extension đang dùng, mở <code>chrome://extensions</code>, bấm tải lại Connecttech Auto Poster, rồi tải lại các tab Facebook.
+            Cách cập nhật: giải nén file zip đè lên thư mục extension đang dùng, mở <code>chrome://extensions</code>, bấm tải lại Connecttech Auto Poster, rồi tải lại các tab Facebook.
           </p>
         </>
       ) : (
